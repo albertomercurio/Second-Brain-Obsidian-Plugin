@@ -10,10 +10,11 @@ import { baseKind, isList, type Schema } from "./schema";
 export function templateFiles(schema: Schema): Map<string, string> {
   const files = new Map<string, string>();
   for (const spec of schema.types.values()) {
-    const meta = { Type: spec.name };
+    const meta = { [schema.typeProperty]: spec.name };
     files.set(spec.name, renderNote(schema.conform(meta) ?? meta, spec.body));
+    if (!schema.kindProperty) continue;
     for (const kind of Object.keys(spec.kindTemplates)) {
-      const kindMeta = { Type: spec.name, Kind: kind };
+      const kindMeta = { ...meta, [schema.kindProperty]: kind };
       files.set(`${spec.name} - ${kind}`, renderNote(schema.conform(kindMeta) ?? kindMeta, spec.body));
     }
   }
@@ -21,15 +22,17 @@ export function templateFiles(schema: Schema): Map<string, string> {
 }
 
 const OBSIDIAN_TYPES: Record<string, string> = { bool: "checkbox", date: "date", int: "number", number: "number" };
+// Obsidian's own properties: it records them in lower case, with their own type, and rewrites the file so.
+const NATIVE = ["aliases", "tags", "cssclasses"];
 
 /** The contents of .obsidian/types.json, keeping what is already there. */
 export function propertyTypes(schema: Schema, current: { types?: Record<string, string> }): string {
   const types = current.types ?? {};
   for (const field of [...schema.allFields()].sort((a, b) => (a.name < b.name ? -1 : 1))) {
-    if (field.name === "Aliases" || field.name === "Tags") {
-      // Native properties: Obsidian records them in lower case and rewrites the file so.
+    const native = field.name.toLowerCase();
+    if (NATIVE.includes(native)) {
       delete types[field.name];
-      types[field.name.toLowerCase()] = field.name.toLowerCase();
+      types[native] = native;
     } else {
       types[field.name] = isList(field) ? "multitext" : OBSIDIAN_TYPES[baseKind(field)] ?? "text";
     }

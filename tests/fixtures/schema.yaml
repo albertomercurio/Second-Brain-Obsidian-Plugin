@@ -1,15 +1,5 @@
-# Test fixture: a copy of the schema of the author's vault.
-# Authoritative source for types, properties and relations: read by the Second
-# Brain plugin (lint, conform, templates). Conventions for people: system/schemas/README.md.
-#
-# Field kinds: string, int, number, bool (checkbox), date (YYYY-MM-DD), url,
-# doi, orcid, enum (values in `values`), link ("[[Note]]", target types in
-# `target`), list[...] for lists of any of the above.
-#
-# `template` lists the properties every note of the type shows, in this order,
-# empty when unknown; other fields are optional and added only when they carry
-# information. `kind_templates` gives a different set for each value of `Kind`,
-# and a field with `kinds` is reserved to those kinds (the lint warns elsewhere).
+# Test fixture: a copy of the schema of the author's vault, with the rules the
+# plugin used to hard-code. The format is described in the README.
 
 version: "0.9"
 updated: 2026-11-06
@@ -18,6 +8,8 @@ updated: 2026-11-06
 content_folders: [Notes, Library, Records, Tasks]
 # Free capture: `Type` optional, safety checks still active.
 free_folders: [Inbox]
+# Selects the kind templates and the fields reserved to a kind.
+kind_property: Kind
 
 common:
   required: [Type]
@@ -41,10 +33,12 @@ types:
     folder: Notes/People
     description: A person (collaborator, author, friend, family member, contact).
     template: [First Name, Last Name, ORCID, Email, Affiliations, Relationship]
+    person_name: [First Name, Last Name]
+    expect_backlinks: true
     fields:
       First Name: {kind: string}
       Last Name: {kind: string}
-      ORCID: {kind: orcid}
+      ORCID: {kind: orcid, unique: true}
       Email: {kind: "list[string]"}
       Affiliations:
         kind: list[link]
@@ -86,6 +80,7 @@ types:
     folder: Notes/Organizations
     description: University, lab, institute, company, funder.
     template: [Kind, Parent, Country, City]
+    expect_backlinks: true
     fields:
       Kind:
         kind: enum
@@ -125,7 +120,7 @@ types:
       Organization: {kind: link, target: [Organization]}
       Project: {kind: link, target: [Project]}
       Start: {kind: date}
-      End: {kind: date}
+      End: {kind: date, after: Start, agenda: role ends}
     body: |
       ## Notes
 
@@ -136,6 +131,11 @@ types:
     description: Research, software, grant, event, teaching or personal project.
     required: [Kind, Status]
     template: [Kind, Status, Collaborators, Topics]
+    expect_backlinks: true
+    open: {Status: [In Progress, Drafting, Submitted, Under Evaluation, Awarded]}
+    closed: {Status: [Completed, Closed, Rejected]}
+    stale_after: 180
+    briefing: [Kind, Status]
     kind_templates:
       Research: [Kind, Status, Collaborators, Organizations, Topics]
       Software: [Kind, Status, PI, Collaborators, Repository, Topics]
@@ -152,7 +152,7 @@ types:
       Parent: {kind: link, target: [Project]}
       Related: {kind: "list[link]", target: [Project]}
       Start: {kind: date}
-      End: {kind: date}
+      End: {kind: date, after: Start, deadline: true, agenda: period ends}
       Repository: {kind: url, kinds: [Software]}
       Funder: {kind: link, target: [Organization], kinds: [Grant]}
       Programme: {kind: string, kinds: [Grant], description: Funding programme or call.}
@@ -162,7 +162,7 @@ types:
       Amount: {kind: number, kinds: [Grant]}
       Currency: {kind: string, kinds: [Grant], description: ISO 4217 code.}
       Reference: {kind: string, kinds: [Grant], description: Contract or decision number.}
-      Deadline: {kind: date, kinds: [Grant], description: Official deadline, checked on the source.}
+      Deadline: {kind: date, kinds: [Grant], agenda: official deadline, description: Official deadline, checked on the source.}
     body: |
       ## Goal
 
@@ -191,6 +191,7 @@ types:
     folder: Notes/Topics
     description: Research topic or concept; a wiki page linked to its sources.
     template: [Broader, Related]
+    expect_backlinks: true
     fields:
       Broader: {kind: "list[link]", target: [Topic]}
       Related: {kind: "list[link]", target: [Topic]}
@@ -215,16 +216,16 @@ types:
 
   Article:
     folder: Library/Articles
-    description: Article or preprint. Its BibTeX entry is a property; `./sb lit check` compares it with Crossref or arXiv.
+    description: Article or preprint. Its BibTeX entry is a property, kept by the bibliography plugin.
     required: [Title]
     template: [Title, Authors, Journal, Year, DOI, arXiv, PDF, Read, Topics, BibTeX]
     fields:
-      Title: {kind: string}
+      Title: {kind: string, unique: similar}
       Authors: {kind: "list[link]", target: [Person]}
       Journal: {kind: link, target: [Journal]}
       Year: {kind: int}
-      DOI: {kind: doi}
-      arXiv: {kind: string}
+      DOI: {kind: doi, unique: true}
+      arXiv: {kind: string, unique: true}
       URL: {kind: url, description: Only when there is no DOI or arXiv identifier.}
       PDF: {kind: "list[link]"}
       Read: {kind: bool}
@@ -311,6 +312,7 @@ types:
     folder: Library/Journals
     description: Journal or publication venue; the file name is the full name.
     template: [Abbreviation]
+    expect_backlinks: true
     fields:
       Abbreviation: {kind: string, description: ISO 4 abbreviation, used in exported BibTeX.}
       Website: {kind: url}
@@ -324,13 +326,15 @@ types:
     folder: Tasks
     description: A concrete action.
     template: [Done, Assignees, Priority, Due Date, Projects]
+    closed: {Done: true}
+    briefing: [Priority, Due Date]
     fields:
       Done: {kind: bool}
       Assignees: {kind: "list[link]", target: [Person]}
       Priority: {kind: enum, values: [High, Medium, Low]}
-      Due Date: {kind: date, description: A real deadline; write its source in the body.}
+      Due Date: {kind: date, deadline: true, agenda: due, description: A real deadline; write its source in the body.}
       Projects: {kind: "list[link]", target: [Project]}
-      Scheduled: {kind: date, description: Planned date.}
+      Scheduled: {kind: date, agenda: scheduled, description: Planned date.}
       Depends On: {kind: "list[link]", target: [Task]}
       Recurrence: {kind: string, description: "iCalendar rule, e.g. FREQ=WEEKLY;BYDAY=MO."}
     body: |
@@ -341,10 +345,11 @@ types:
     description: Dated event (meeting, talk, conference, visit, deadline).
     required: [Kind, Date]
     template: [Kind, Date, Participants, Projects]
+    closed: {Status: Cancelled}
     fields:
       Kind: {kind: enum, values: [Meeting, Talk, Conference, School, Visit, Call, Deadline, Trip, Exam, Other]}
-      Date: {kind: date}
-      End Date: {kind: date}
+      Date: {kind: date, agenda: event}
+      End Date: {kind: date, after: Date}
       Status: {kind: enum, values: [Proposed, Tentative, Confirmed, Cancelled]}
       Participants: {kind: "list[link]", target: [Person]}
       Projects: {kind: "list[link]", target: [Project]}

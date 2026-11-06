@@ -1,11 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { lint } from "../src/lint";
+import { parse } from "yaml";
+import { lint, slug } from "../src/lint";
+import { Schema } from "../src/schema";
 import fixture from "./fixtures/lint-vault.json";
 import { note, schema, vaultOf } from "./helpers";
 
-const issuesOf = (files: Record<string, string>) => lint(vaultOf(files), schema, "2026-10-26");
-const codes = (files: Record<string, string>) => issuesOf(files).map((issue) => issue.code);
+const issuesOf = (files: Record<string, string>, today = "2026-10-26", s = schema) => lint(vaultOf(files), s, today);
+const codes = (files: Record<string, string>, today?: string, s?: Schema) => issuesOf(files, today, s).map((issue) => issue.code);
 
 test("an archive full of mistakes: every problem, and only those", () => {
   const found = [...new Set(lint(vaultOf(fixture.files), schema, fixture.today).map((issue) => `${issue.code} ${issue.path}`))].sort();
@@ -24,12 +26,12 @@ test("an impossible date is a mistake in the note, not a crash", () => {
   assert.ok(codes({ "Tasks/T.md": note("Type: Task\nDue Date: 2020-02-30") }).includes("field-kind"));
 });
 
-test("a Templater command in content is an error: it would run when the file is created", () => {
+test("a Templater command is an error anywhere but in the templates", () => {
   const command = "<%* tp.user.anything() %>";
   assert.ok(codes({ "Inbox/mail.md": `From an email: ${command}\n` }).includes("templater-command"));
   assert.ok(codes({ "Library/Articles/A.md": note(`Type: Article\nTitle: "${command}"`) }).includes("templater-command"));
   assert.ok(codes({ "2026-10-26_04_DOC.md": `About ${command}\n` }).includes("templater-command"));
-  assert.ok(!codes({ "system/guides/g.md": `How to write ${command}\n` }).includes("templater-command"));
+  assert.ok(!codes({ "system/templates/Task.md": `${command}\n` }).includes("templater-command"));
 });
 
 test("hints: case of a property, aliases, similar names", () => {
@@ -38,26 +40,39 @@ test("hints: case of a property, aliases, similar names", () => {
     "Notes/People/Mario Rossi.md": note("Type: Person\nAliases:\n  - M. Rossi"),
   });
   const hint = (message: string) => issues.find((issue) => issue.message.includes(message))?.hint;
-  assert.equal(hint(": status"), "scrivi «Status»");
-  assert.equal(hint("Collaboratrs"), "forse «Collaborators»?");
-  assert.match(hint("corpo: M. Rossi")!, /è un alias di «Mario Rossi»/);
-  assert.equal(hint("corpo: Mario Rosi"), "forse «Mario Rossi»?");
+  assert.equal(hint(": status"), 'write "Status"');
+  assert.equal(hint("Collaboratrs"), 'maybe "Collaborators"?');
+  assert.match(hint("body: M. Rossi")!, /an alias of "Mario Rossi"/);
+  assert.equal(hint("body: Mario Rosi"), 'maybe "Mario Rossi"?');
 });
 
-test("large collaborations: only the first author needs to be linked", () => {
-  const authors = Array.from({ length: 30 }, (_, i) => `Family${i}, A`).join(" and ");
-  const entry = `@article{K,\n    author = {${authors}},\n  }`;
-  const files = {
-    "Notes/People/Family0.md": note("Type: Person\nLast Name: Family0"),
-    "Library/Articles/A.md": note(`Type: Article\nTitle: T\nAuthors:\n  - "[[Family0]]"\nBibTeX: |-\n  ${entry}`),
-  };
-  assert.ok(!codes(files).includes("reference-mismatch"));
+test("a link in a property is reported on its line", () => {
+  const issues = issuesOf({ "Notes/Projects/P.md": note('Type: Project\nKind: Research\nStatus: Idea\nCollaborators:\n  - "[[Nobody]]"') });
+  assert.deepEqual(issues.filter((issue) => issue.code === "link-broken").map((issue) => [issue.line, issue.message]), [[6, "link without a destination in property Collaborators: Nobody"]]);
 });
 
-test("recently modified projects are not stale, old ones are", () => {
+test("open notes untouched for longer than stale_after are reported", () => {
   const files = { "Notes/Projects/P.md": note("Type: Project\nKind: Research\nStatus: In Progress") };
   assert.ok(!codes(files).includes("project-stale"));
-  assert.ok(lint(vaultOf(files), schema, "2027-10-26").some((issue) => issue.code === "project-stale"));
+  assert.ok(codes(files, "2027-10-26").includes("project-stale"));
+  assert.ok(!codes({ "Notes/Projects/P.md": note("Type: Project\nKind: Research\nStatus: Completed") }, "2027-10-26").includes("project-stale"));
+});
+
+test("a deadline passed is overdue while the note is open, and not once it is closed", () => {
+  const task = (done: string) => ({ "Tasks/T.md": note(`Type: Task\nDone: ${done}\nDue Date: 2026-01-01`) });
+  const overdue = issuesOf(task("false")).find((issue) => issue.code === "task-overdue")!;
+  assert.equal(overdue.message, "Due Date passed on 2026-01-01");
+  assert.equal(overdue.hint, "if it is done, set Done: true");
+  assert.ok(!codes(task("true")).includes("task-overdue"));
+  const project = (status: string) => ({ "Notes/Projects/P.md": note(`Type: Project\nKind: Grant\nStatus: ${status}\nEnd: 2026-01-01`) });
+  assert.equal(issuesOf(project("In Progress")).find((issue) => issue.code === "project-overdue")?.message, "End passed on 2026-01-01, but Status is still In Progress");
+  assert.ok(!codes(project("Completed")).includes("project-overdue"));
+  assert.ok(!codes(project("On Hold")).includes("project-overdue"), "neither open nor closed");
+});
+
+test("a date before the one it must follow is an error", () => {
+  assert.ok(codes({ "Notes/Roles/R.md": note("Type: Role\nStart: 2026-02-01\nEnd: 2026-01-01") }).includes("date-order"));
+  assert.ok(!codes({ "Notes/Roles/R.md": note("Type: Role\nStart: 2026-01-01\nEnd: 2026-02-01") }).includes("date-order"));
 });
 
 test("a typed note with no links in either direction is isolated", () => {
@@ -66,10 +81,52 @@ test("a typed note with no links in either direction is isolated", () => {
   assert.deepEqual(isolated, ["Notes/Ideas/Alone.md"]);
 });
 
-test("compound surnames split differently by the source are not a mismatch; another surname is", () => {
-  const article = (family: string) => note(`Type: Article\nTitle: T\nAuthors:\n  - "[[Anton Frisk Kockum]]"\nBibTeX: |-\n  @article{K2017T,\n    author = {${family}, Anton},\n    title = {T},\n  }`);
-  const person = note("Type: Person\nFirst Name: Anton\nLast Name: Frisk Kockum");
-  const codes = (family: string) => lint(vaultOf({ "Notes/People/Anton Frisk Kockum.md": person, "Library/Articles/A.md": article(family) }), schema, "2026-11-04").map((issue) => issue.code);
-  assert.ok(!codes("Kockum").includes("reference-mismatch"));
-  assert.ok(codes("Rossi").includes("reference-mismatch"));
+test("duplicates: shared identifiers are errors, similar titles and names warnings", () => {
+  const rules = new Schema(
+    parse(`
+types:
+  Paper:
+    fields:
+      Title: {unique: similar}
+      DOI: {unique: true}
+      Version Of: {kind: link}
+  Peer Review:
+    person_name: [Given, Family]
+    fields:
+      ID: {unique: true}
+`),
+    "Type"
+  );
+  const issues = issuesOf(
+    {
+      "P/A.md": note("Type: Paper\nTitle: A Study\nDOI: 10.1/X"),
+      "P/B.md": note("Type: Paper\nTitle: a study!\nDOI: 10.1/x"),
+      "P/C.md": note("Type: Paper\nTitle: Other"),
+      "P/D.md": note('Type: Paper\nTitle: Other\nVersion Of: "[[C]]"'),
+      "R/Ada Lovelace.md": note("Type: Peer Review\nGiven: Ada\nFamily: Lovelace"),
+      "R/A Lovelace.md": note("Type: Peer Review\nGiven: A.\nFamily: Lovelace"),
+      "R/Ada King.md": note("Type: Peer Review\nGiven: Ada\nFamily: King\nID: 1"),
+      "R/A. King.md": note("Type: Peer Review\nID: 2"),
+    },
+    "2026-10-26",
+    rules
+  ).filter((issue) => issue.code.endsWith("-duplicate"));
+  assert.deepEqual(
+    issues.map((issue) => [issue.severity, issue.code, issue.path]),
+    [
+      ["error", "paper-duplicate", "P/B.md"],
+      ["warning", "paper-duplicate", "P/B.md"],
+      ["warning", "peer-review-duplicate", "R/Ada Lovelace.md"],
+    ]
+  );
+});
+
+test("types become codes in lowercase with dashes", () => {
+  assert.equal(slug("Peer Review"), "peer-review");
+  assert.equal(slug("Task"), "task");
+});
+
+test("without a schema, the checks that need none still run", () => {
+  const empty = new Schema(null, "type");
+  assert.deepEqual(codes({ "a.md": "[[Nowhere]]\n" }, "2026-10-26", empty), ["link-broken"]);
 });

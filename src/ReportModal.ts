@@ -7,7 +7,8 @@ export class ReportModal extends Modal {
   constructor(
     app: App,
     private issues: Issue[],
-    private recall: RecallResult[],
+    /** Null when the vault has no recall tests. */
+    private recall: RecallResult[] | null,
     private toConform: string[],
     private conform: () => Promise<void>
   ) {
@@ -15,6 +16,10 @@ export class ReportModal extends Modal {
   }
 
   private noteLink(parent: HTMLElement, path: string): void {
+    if (!this.app.vault.getAbstractFileByPath(path)) {
+      parent.appendText(path);
+      return;
+    }
     const link = parent.createEl("a", { text: path, href: "#" });
     link.addEventListener("click", (event) => {
       event.preventDefault();
@@ -38,11 +43,13 @@ export class ReportModal extends Modal {
       if (issue.hint) item.createEl("div", { text: `→ ${issue.hint}` });
     }
 
-    const failed = this.recall.filter((result) => !result.ok);
-    contentEl.createEl("h3", { text: "Recall tests" });
-    contentEl.createEl("p", { text: `${this.recall.length - failed.length}/${this.recall.length} passed.` });
-    const failures = contentEl.createEl("ul");
-    for (const result of failed) failures.createEl("li", { text: `${result.id}: ${result.question} → ${result.got.join(", ") || "no answer"}` });
+    if (this.recall) {
+      const failed = this.recall.filter((result) => !result.ok);
+      contentEl.createEl("h3", { text: "Recall tests" });
+      contentEl.createEl("p", { text: `${this.recall.length - failed.length}/${this.recall.length} passed.` });
+      const failures = contentEl.createEl("ul");
+      for (const result of failed) failures.createEl("li", { text: `${result.id}: ${result.question} → ${result.got.join(", ") || "no answer"}` });
+    }
 
     if (!this.toConform.length) return;
     contentEl.createEl("h3", { text: "Notes that differ from their template" });

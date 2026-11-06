@@ -6,21 +6,25 @@ import { linksOf, neighbours, shortestPath } from "./graph";
 import type { RecallResult } from "./recall";
 import type { Vault } from "./vault";
 
+/** "1 error", "2 errors". */
+export const plural = (count: number, word: string): string => `${count} ${word}${count === 1 ? "" : "s"}`;
+
 export function lintReport(issues: Issue[], all: boolean): string {
   const counts = countBySeverity(issues);
   const lines = issues
     .filter((issue) => all || issue.severity !== "info")
     .map((issue) => `${issue.severity.padEnd(7)} ${issue.code.padEnd(20)} ${issue.path}:${issue.line}  ${issue.message}${issue.hint ? ` → ${issue.hint}` : ""}`);
-  const summary = `${counts.error} errori, ${counts.warning} avvisi, ${counts.info} informazioni${all ? "" : " (all per vedere le informazioni)"}`;
+  const summary = `${plural(counts.error, "error")}, ${plural(counts.warning, "warning")}, ${plural(counts.info, "notice")}${all ? "" : " (all to list the notices)"}`;
   return [...lines, ...(lines.length ? [""] : []), summary].join("\n");
 }
 
 export function recallReport(results: RecallResult[]): string {
+  if (!results.length) return "No recall tests.";
   const failed = results.filter((result) => !result.ok).length;
   return [
-    ...results.map(({ ok, id, question, got }) => `${ok ? "OK  " : "FAIL"} ${id}  ${question}\n       → ${got.join(", ") || "(nessun risultato)"}`),
+    ...results.map(({ ok, id, question, got }) => `${ok ? "OK  " : "FAIL"} ${id}  ${question}\n       → ${got.join(", ") || "(no answer)"}`),
     "",
-    `${results.length - failed}/${results.length} superati`,
+    `${results.length - failed}/${results.length} passed`,
   ].join("\n");
 }
 
@@ -29,22 +33,22 @@ export function linksReport(vault: Vault, query: string, json: boolean): string 
   if (json) return JSON.stringify(result, null, 1);
   const name = (path: string) => vault.notes.get(path)!.name;
   const lines = [`# ${name(result.note)}`];
-  for (const [title, group] of [["In uscita", result.outgoing], ["In entrata", result.incoming]] as const) {
+  for (const [title, group] of [["Outgoing", result.outgoing], ["Incoming", result.incoming]] as const) {
     lines.push("", `${title}:`);
     const entries = Object.entries(group);
-    if (!entries.length) lines.push("  (nessuno)");
+    if (!entries.length) lines.push("  (none)");
     for (const [field, paths] of entries) lines.push(`  ${field}: ${paths.map(name).join(", ")}`);
   }
-  if (result.unresolved.length) lines.push("", `Irrisolti: ${result.unresolved.join(", ")}`);
+  if (result.unresolved.length) lines.push("", `Unresolved: ${result.unresolved.join(", ")}`);
   return lines.join("\n");
 }
 
 export function pathReport(vault: Vault, from: string, to: string, all: boolean): string {
   const steps = shortestPath(vault, vault.get(from), vault.get(to), !all);
-  if (!steps) return "Nessun percorso fra le due note.";
+  if (!steps) return "No path between the two notes.";
   const name = (path: string) => vault.notes.get(path)!.name;
   const line = steps.slice(1).map(({ path, label, direction }) => `${direction === "out" ? ` —${label}→ ` : ` ←${label}— `}${name(path)}`);
-  return `${name(steps[0].path)}${line.join("")}\n(${steps.length - 1} passi)`;
+  return `${name(steps[0].path)}${line.join("")}\n(${steps.length - 1} ${steps.length === 2 ? "step" : "steps"})`;
 }
 
 export function neighboursReport(vault: Vault, query: string, depth: number): string {

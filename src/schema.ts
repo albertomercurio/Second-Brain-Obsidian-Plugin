@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
-// The schema of the vault (system/schemas/schema.yaml): types, their properties
-// and how to check a value. The host parses the YAML; this module interprets it.
-// To add a type or a property, edit the YAML: no code changes are needed.
+// The schema of the vault: types of notes, their properties, how to check a
+// value, and the rules the checks and the briefing follow. The host parses the
+// YAML; this module interprets it. The format is described in the README.
 // ---------------------------------------------------------------------------
 
 import { asDate } from "./text";
@@ -14,9 +14,20 @@ export interface Field {
   values: unknown[];
   /** For links: the types they may point to. */
   target: string[];
-  /** Project kinds the field is reserved to. */
+  /** Kinds (values of the kind property) the field is reserved to. */
   kinds: string[];
+  /** true: an identifier, two notes of the type never share it; "similar": a name, a shared one is suspicious. */
+  unique: boolean | "similar";
+  /** For dates: the property this one cannot precede. */
+  after: string | null;
+  /** For dates: passed while the note is open, it is overdue. */
+  deadline: boolean;
+  /** For dates: label in the briefing's agenda; null when not shown. */
+  agenda: string | null;
 }
+
+/** Property → values: a note matches when any of the properties has one of its values. */
+export type Condition = Map<string, unknown[]>;
 
 export interface TypeSpec {
   name: string;
@@ -26,41 +37,91 @@ export interface TypeSpec {
   kindTemplates: Record<string, string[]>;
   fields: Map<string, Field>;
   body: string;
+  /** Notes in progress; without it, every note that is not closed. */
+  open: Condition | null;
+  /** Notes that are done: out of the agenda, never overdue. */
+  closed: Condition | null;
+  /** Days after which an open note nobody modified is reported. */
+  staleAfter: number | null;
+  /** A note nobody links to is reported. */
+  expectBacklinks: boolean;
+  /** Properties with the given and family name: similar names are possible duplicates. */
+  personName: [string, string] | null;
+  /** Properties shown for each open note in the briefing; empty: the type is not listed. */
+  briefing: string[];
 }
 
 export const isList = (field: Field): boolean => field.kind.startsWith("list[");
 export const baseKind = (field: Field): string => (isList(field) ? field.kind.slice(5, -1) : field.kind);
 
+const list = (value: unknown): unknown[] => (value === undefined || value === null ? [] : Array.isArray(value) ? value : [value]);
+const strings = (value: unknown): string[] => list(value).map(String);
+
 function readFields(raw: Record<string, any> = {}): Map<string, Field> {
   return new Map(
-    Object.entries(raw).map(([name, spec]) => {
+    Object.entries(raw ?? {}).map(([name, spec]) => {
       const s = typeof spec === "string" ? { kind: spec } : spec ?? {};
-      return [name, { name, kind: s.kind ?? "string", values: s.values ?? [], target: s.target ?? [], kinds: s.kinds ?? [] }];
+      const agenda = s.agenda === true ? name : typeof s.agenda === "string" && s.agenda ? s.agenda : null;
+      return [
+        name,
+        {
+          name,
+          kind: s.kind ?? "string",
+          values: list(s.values),
+          target: strings(s.target),
+          kinds: strings(s.kinds),
+          unique: s.unique === "similar" ? "similar" : s.unique === true,
+          after: typeof s.after === "string" ? s.after : null,
+          deadline: s.deadline === true,
+          agenda,
+        },
+      ];
     })
   );
+}
+
+function readCondition(raw: unknown): Condition | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  return new Map(Object.entries(raw).map(([property, values]) => [property, list(values)]));
+}
+
+function matches(condition: Condition, meta: Meta): boolean {
+  return [...condition].some(([property, values]) => list(meta[property]).some((value) => values.includes(value)));
 }
 
 export class Schema {
   readonly types = new Map<string, TypeSpec>();
   readonly contentFolders: string[];
   readonly freeFolders: string[];
+  /** Property whose values select a kind template and the fields reserved to a kind. */
+  readonly kindProperty: string | null;
   private commonFields: Map<string, Field>;
   private commonRequired: string[];
 
-  constructor(data: any) {
-    this.contentFolders = data.content_folders ?? [];
-    this.freeFolders = data.free_folders ?? [];
+  constructor(data: any, readonly typeProperty: string) {
+    data = data && typeof data === "object" ? data : {};
+    this.contentFolders = strings(data.content_folders);
+    this.freeFolders = strings(data.free_folders);
+    this.kindProperty = typeof data.kind_property === "string" ? data.kind_property : null;
     this.commonFields = readFields(data.common?.fields);
-    this.commonRequired = data.common?.required ?? [];
+    this.commonRequired = strings(data.common?.required);
     for (const [name, raw] of Object.entries<any>(data.types ?? {})) {
+      const spec = raw ?? {};
+      const personName = strings(spec.person_name);
       this.types.set(name, {
         name,
-        folder: raw.folder,
-        required: raw.required ?? [],
-        template: raw.template ?? [],
-        kindTemplates: raw.kind_templates ?? {},
-        fields: readFields(raw.fields),
-        body: raw.body ?? "",
+        folder: spec.folder ?? "",
+        required: strings(spec.required),
+        template: strings(spec.template),
+        kindTemplates: spec.kind_templates ?? {},
+        fields: readFields(spec.fields),
+        body: spec.body ?? "",
+        open: readCondition(spec.open),
+        closed: readCondition(spec.closed),
+        staleAfter: typeof spec.stale_after === "number" ? spec.stale_after : null,
+        expectBacklinks: spec.expect_backlinks === true,
+        personName: personName.length === 2 ? [personName[0], personName[1]] : null,
+        briefing: strings(spec.briefing),
       });
     }
   }
@@ -78,7 +139,7 @@ export class Schema {
 
   /** Folders the schema assigns to notes. */
   folders(): string[] {
-    return [...this.contentFolders, ...this.freeFolders, ...[...this.types.values()].map((spec) => spec.folder)];
+    return [...this.contentFolders, ...this.freeFolders, ...[...this.types.values()].map((spec) => spec.folder).filter(Boolean)];
   }
 
   requiredFor(type: string): string[] {
@@ -93,17 +154,33 @@ export class Schema {
     return this.freeFolders.some((folder) => path.startsWith(`${folder}/`));
   }
 
+  /** The kind of a note, when the schema names a kind property. */
+  kindOf(meta: Meta): string | null {
+    const value = this.kindProperty ? meta[this.kindProperty] : undefined;
+    return typeof value === "string" && value ? value : null;
+  }
+
+  isClosed(spec: TypeSpec, meta: Meta): boolean {
+    return spec.closed ? matches(spec.closed, meta) : false;
+  }
+
+  isOpen(spec: TypeSpec, meta: Meta): boolean {
+    return spec.open ? matches(spec.open, meta) : !this.isClosed(spec, meta);
+  }
+
   /**
-   * The frontmatter a note should have: `Type`, then the template of its type
-   * and kind in order (missing ones empty), then any other property as it was.
-   * Returns null when nothing changes, order included.
+   * The frontmatter a note should have: the type property, then the template of
+   * its type and kind in order (missing ones empty), then any other property as
+   * it was. Returns null when nothing changes, order included.
    */
   conform(meta: Meta): Meta | null {
-    const spec = typeof meta.Type === "string" ? this.types.get(meta.Type) : undefined;
+    const type = meta[this.typeProperty];
+    const spec = typeof type === "string" ? this.types.get(type) : undefined;
     if (!spec) return null;
-    const template = (typeof meta.Kind === "string" && spec.kindTemplates[meta.Kind]) || spec.template;
+    const kind = this.kindOf(meta);
+    const template = (kind && spec.kindTemplates[kind]) || spec.template;
     const next: Meta = {};
-    for (const key of ["Type", ...template]) next[key] = key in meta ? meta[key] : spec.fields.get(key)?.kind === "bool" ? false : null;
+    for (const key of [this.typeProperty, ...template]) next[key] = key in meta ? meta[key] : spec.fields.get(key)?.kind === "bool" ? false : null;
     for (const [key, value] of Object.entries(meta)) if (!(key in next)) next[key] = value;
     return Object.keys(next).join("\n") === Object.keys(meta).join("\n") ? null : next;
   }
@@ -125,25 +202,25 @@ function checkScalar(field: Field, value: unknown): string[] {
   switch (baseKind(field)) {
     case "string":
     case "text":
-      return fail(`atteso testo, trovato ${typeof value}`, typeof value === "string");
+      return fail(`expected text, found ${typeof value}`, typeof value === "string");
     case "int":
-      return fail("atteso un numero intero", Number.isInteger(value));
+      return fail("expected a whole number", Number.isInteger(value));
     case "number":
-      return fail("atteso un numero", typeof value === "number");
+      return fail("expected a number", typeof value === "number");
     case "bool":
-      return fail("atteso true o false (checkbox)", typeof value === "boolean");
+      return fail("expected true or false (checkbox)", typeof value === "boolean");
     case "date":
-      return fail("attesa una data YYYY-MM-DD", asDate(value) !== null);
+      return fail("expected a date YYYY-MM-DD", asDate(value) !== null);
     case "url":
-      return fail("atteso un URL http(s)", /^https?:\/\//.test(text));
+      return fail("expected an http(s) URL", /^https?:\/\//.test(text));
     case "doi":
-      return fail("DOI non valido (atteso 10.xxxx/...)", DOI.test(text));
+      return fail("invalid DOI (expected 10.xxxx/...)", DOI.test(text));
     case "orcid":
-      return fail("ORCID non valido (atteso 0000-0000-0000-0000)", ORCID.test(text));
+      return fail("invalid ORCID (expected 0000-0000-0000-0000)", ORCID.test(text));
     case "enum":
-      return fail(`valore «${value}» non ammesso: ${field.values.join(", ")}`, field.values.includes(value));
+      return fail(`value "${value}" not allowed: ${field.values.join(", ")}`, field.values.includes(value));
     case "link":
-      return fail('atteso un wikilink tra virgolette, per esempio "[[Nota]]"', LINK_ONLY.test(text));
+      return fail('expected a wikilink in quotes, for example "[[Note]]"', LINK_ONLY.test(text));
     default:
       return [];
   }
@@ -153,8 +230,8 @@ function checkScalar(field: Field, value: unknown): string[] {
 export function checkValue(field: Field, value: unknown): string[] {
   if (isEmpty(value)) return [];
   if (!isList(field)) return checkScalar(field, value);
-  if (!Array.isArray(value)) return [`dovrebbe essere una lista (${field.kind})`];
-  const problems = value.some(isEmpty) ? ["contiene elementi vuoti"] : [];
+  if (!Array.isArray(value)) return [`should be a list (${field.kind})`];
+  const problems = value.some(isEmpty) ? ["contains empty items"] : [];
   for (const item of value) if (!isEmpty(item)) problems.push(...checkScalar(field, item));
   return [...new Set(problems)].sort();
 }

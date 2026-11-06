@@ -13,8 +13,10 @@ const vault = vaultOf({
   "Library/Articles/A.md": note('Type: Article\nTitle: Test\nAuthors:\n  - "[[Mario Rossi]]"\nTopics:\n  - "[[T]]"', "See [[Missing]].\n"),
   "Tasks/Soon.md": note("Type: Task\nDone: false\nPriority: High\nDue Date: 2026-11-01"),
   "Tasks/Late.md": note("Type: Task\nDone: false\nDue Date: 2026-01-01"),
+  "Tasks/Done.md": note("Type: Task\nDone: true\nDue Date: 2026-01-01"),
+  "Notes/Projects/Live.md": note("Type: Project\nKind: Research\nStatus: In Progress"),
+  "Notes/Projects/Idea.md": note("Type: Project\nKind: Research\nStatus: Idea"),
   "Inbox/x.md": "To sort\n",
-  "system/log.md": "## [2026-10-26] edit | first\n",
 });
 
 test("links of a note, grouped by property", () => {
@@ -25,8 +27,8 @@ test("links of a note, grouped by property", () => {
 });
 
 test("the command line prints links and paths with the name of each relation", () => {
-  assert.equal(linksReport(vault, "T", false), "# T\n\nIn uscita:\n  (nessuno)\n\nIn entrata:\n  Topics: A");
-  assert.equal(pathReport(vault, "Mario Rossi", "T", false), "Mario Rossi ←Authors— A —Topics→ T\n(2 passi)");
+  assert.equal(linksReport(vault, "T", false), "# T\n\nOutgoing:\n  (none)\n\nIncoming:\n  Topics: A");
+  assert.equal(pathReport(vault, "Mario Rossi", "T", false), "Mario Rossi ←Authors— A —Topics→ T\n(2 steps)");
 });
 
 test("shortest path and neighbours go both ways", () => {
@@ -47,19 +49,21 @@ test("recall tests: a right answer passes, a wrong or too long one fails", () =>
       { id: "R2", question: "incoming", op: "incoming", note: "Mario Rossi", field: "Authors", expect: ["A"] },
       { id: "R3", question: "path", op: "path", from: "Mario Rossi", to: "T", expect: ["A"], max_length: 3 },
       { id: "R4", question: "too long", op: "path", from: "Mario Rossi", to: "T", expect: ["A"], max_length: 2 },
-      { id: "R5", question: "articles", op: "articles", author: "Mario Rossi", topic: "T", expect: ["A"] },
+      { id: "R5", question: "notes", op: "notes", type: "Article", links: { Authors: "Mario Rossi", Topics: "T" }, expect: ["A"] },
       { id: "R6", question: "wrong", op: "field", note: "A", field: "Topics", expect: ["Other"] },
     ],
   });
   assert.deepEqual(results.map((result) => result.ok), [true, true, true, false, true, false]);
+  assert.throws(() => runRecall(vault, { checks: [{ id: "R7", op: "articles" }] }), /Unknown operation in recall test R7: articles/);
 });
 
 test("the briefing lists what comes next, what is late and the log", () => {
   const today = "2026-10-26";
-  const text = briefing(vault, schema, lint(vault, schema, today), today);
+  const text = briefing(vault, schema, lint(vault, schema, today), today, "## [2026-10-26] edit | first\n");
   assert.match(text, /## Next 30 days\n\n- 2026-11-01 · due · \[\[Soon\]\]/);
   assert.match(text, /## Overdue\n\n- 2026-01-01 · due · \[\[Late\]\]/);
-  assert.match(text, /## Open tasks\n\n- \[\[Soon\]\] · High · 2026-11-01\n- \[\[Late\]\] · 2026-01-01/);
-  assert.match(text, /Inbox items to sort: 1\./);
+  assert.match(text, /## Open: Task\n\n- \[\[Soon\]\] · High · 2026-11-01\n- \[\[Late\]\] · 2026-01-01/);
+  assert.match(text, /## Open: Project\n\n- \[\[Live\]\] · Research · In Progress\n\n/);
+  assert.match(text, /To sort in Inbox: 1\./);
   assert.match(text, /## Latest log entries\n\n- 2026-10-26 · edit \| first/);
 });

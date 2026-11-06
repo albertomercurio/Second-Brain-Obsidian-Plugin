@@ -40,5 +40,5 @@ test("the lint reports a view filtering a folder that no longer exists", () => {
     "Notes/People/P.md": note("Type: Person"),
   });
   const found = lint(vault, schema, "2026-11-04").filter((issue) => issue.code === "base-folder-broken");
-  assert.deepEqual(found.map((issue) => issue.message), ['la vista filtra una cartella inesistente: inFolder("Old Folder")']);
+  assert.deepEqual(found.map((issue) => issue.message), ['the view filters a folder that does not exist: inFolder("Old Folder")']);
 });

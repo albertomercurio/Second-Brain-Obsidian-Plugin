@@ -1,5 +1,11 @@
 // Recall tests: questions with a known answer, solved only through the links
-// (system/tests/recall.yaml). They measure whether the memory stays reachable.
+// (the recall file of the settings). They measure whether the memory stays
+// reachable. Operations:
+//   field     the notes a property of `note` links to
+//   incoming  the notes linking to `note`, through `field` if given
+//   path      the shortest chain from `from` to `to`
+//   notes     the notes (of `type`, if given) whose properties link to the given
+//             notes: `links: {Authors: Ada Lovelace, Topics: Analytical engine}`
 
 import { shortestPath } from "./graph";
 import { compare } from "./text";
@@ -26,22 +32,21 @@ function answer(vault: Vault, check: any): string[] {
       const steps = shortestPath(vault, vault.get(check.from), vault.get(check.to)) ?? [];
       return steps.map((step) => vault.notes.get(step.path)!.name);
     }
-    case "articles": {
-      let articles = vault.typedNotes("Article");
-      for (const [field, key] of [["Authors", "author"], ["Topics", "topic"]]) {
-        if (!check[key]) continue;
-        const target = vault.get(check[key]).path;
-        articles = articles.filter((note) => note.links.some((link) => link.field === field && link.resolved === target));
+    case "notes": {
+      let notes = check.type ? vault.typedNotes(check.type) : [...vault.notes.values()];
+      for (const [field, query] of Object.entries<string>(check.links ?? {})) {
+        const target = vault.get(query).path;
+        notes = notes.filter((note) => note.links.some((link) => link.field === field && link.resolved === target));
       }
-      return articles.map((note) => note.name).sort(compare);
+      return notes.map((note) => note.name).sort(compare);
     }
     default:
-      throw new Error(`Operazione sconosciuta nel test di recupero: ${check.op}`);
+      throw new Error(`Unknown operation in recall test ${check.id}: ${check.op}`);
   }
 }
 
 export function runRecall(vault: Vault, spec: any): RecallResult[] {
-  return (spec.checks ?? []).map((check: any) => {
+  return (spec?.checks ?? []).map((check: any) => {
     const got = answer(vault, check);
     const found = (check.expect ?? []).every((expected: string) => got.includes(expected));
     const shortEnough = check.max_length === undefined || (got.length > 0 && got.length <= check.max_length);
