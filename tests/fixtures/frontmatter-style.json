@@ -1,0 +1,61 @@
+{
+ "_comment": "Note written as Obsidian writes them: every case must keep this layout and read back the same.",
+ "cases": [
+  {
+   "meta": {
+    "Type": "Person",
+    "First Name": "Maria",
+    "Last Name": "Pérez Núñez",
+    "ORCID": null,
+    "Email": [],
+    "Affiliations": [
+     "[[Example-Lab]]"
+    ],
+    "Relationship": [
+     "Collaborator"
+    ]
+   },
+   "yaml": "---\nType: Person\nFirst Name: Maria\nLast Name: Pérez Núñez\nORCID:\nEmail: []\nAffiliations:\n  - \"[[Example-Lab]]\"\nRelationship:\n  - Collaborator\n---\n"
+  },
+  {
+   "meta": {
+    "Type": "Article",
+    "Title": "Example.jl: An efficient framework for simulating open systems",
+    "Authors": [
+     "[[Ada Rossi]]",
+     "[[Li-Na Wu]]"
+    ],
+    "Journal": "[[Quantum]]",
+    "Year": 2025,
+    "DOI": "10.5555/q-2025-01-14-0001",
+    "arXiv": "2501.00001",
+    "PDF": null,
+    "Read": false,
+    "Topics": null,
+    "BibTeX": "@article{Rossi2025ExampleJlEfficient,\n  author = {Rossi, Ada and Bianch\\`{i}, Luca},\n  title = {{Example.jl: An efficient framework}},\n  journal = {Quantum},\n  year = {2025}\n}"
+   },
+   "yaml": "---\nType: Article\nTitle: \"Example.jl: An efficient framework for simulating open systems\"\nAuthors:\n  - \"[[Ada Rossi]]\"\n  - \"[[Li-Na Wu]]\"\nJournal: \"[[Quantum]]\"\nYear: 2025\nDOI: 10.5555/q-2025-01-14-0001\narXiv: \"2501.00001\"\nPDF:\nRead: false\nTopics:\nBibTeX: |-\n  @article{Rossi2025ExampleJlEfficient,\n    author = {Rossi, Ada and Bianch\\`{i}, Luca},\n    title = {{Example.jl: An efficient framework}},\n    journal = {Quantum},\n    year = {2025}\n  }\n---\n"
+  },
+  {
+   "meta": {
+    "Type": "Project",
+    "Kind": "Grant",
+    "Status": "Drafting",
+    "Reference": "12_3456",
+    "Amount": 12000.5,
+    "Start": "2026-10-26",
+    "Currency": "CHF",
+    "Tags": [
+     "experiment",
+     "#odd"
+    ],
+    "Programme": "yes",
+    "Funder": "[[Example Fund]]",
+    "Note": "",
+    "Website": "https://example.org/a#b",
+    "Code": "0000-0002-1825-0097"
+   },
+   "yaml": "---\nType: Project\nKind: Grant\nStatus: Drafting\nReference: 12_3456\nAmount: 12000.5\nStart: 2026-10-26\nCurrency: CHF\nTags:\n  - experiment\n  - \"#odd\"\nProgramme: yes\nFunder: \"[[Example Fund]]\"\nNote: \"\"\nWebsite: https://example.org/a#b\nCode: 0000-0002-1825-0097\n---\n"
+  }
+ ]
+}

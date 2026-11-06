@@ -1,0 +1,22 @@
+{
+  "name": "second-brain-plugin",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Checks an Obsidian vault against a schema of note types and reads its links as typed relations",
+  "author": "Alberto Mercurio",
+  "license": "MIT",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "node tests/run.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "0.21.5",
+    "obsidian": "latest",
+    "typescript": "5.4.5"
+  },
+  "dependencies": {
+    "yaml": "2.8.3"
+  }
+}

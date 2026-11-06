@@ -1,0 +1,358 @@
+# Test fixture: a copy of the schema of the author's vault.
+# Authoritative source for types, properties and relations: read by the Second
+# Brain plugin (lint, conform, templates). Conventions for people: system/schemas/README.md.
+#
+# Field kinds: string, int, number, bool (checkbox), date (YYYY-MM-DD), url,
+# doi, orcid, enum (values in `values`), link ("[[Note]]", target types in
+# `target`), list[...] for lists of any of the above.
+#
+# `template` lists the properties every note of the type shows, in this order,
+# empty when unknown; other fields are optional and added only when they carry
+# information. `kind_templates` gives a different set for each value of `Kind`,
+# and a field with `kinds` is reserved to those kinds (the lint warns elsewhere).
+
+version: "0.9"
+updated: 2026-11-06
+
+# Folders holding typed objects: every note inside must have `Type`.
+content_folders: [Notes, Library, Records, Tasks]
+# Free capture: `Type` optional, safety checks still active.
+free_folders: [Inbox]
+
+common:
+  required: [Type]
+  fields:
+    Type:
+      kind: string
+      description: Object type.
+    Aliases:
+      kind: list[string]
+      description: Name variants and Italian/English equivalents (recognised by Obsidian).
+    Tags:
+      kind: list[string]
+      description: Labels that are not subjects, in kebab-case (e.g. experiment). Subjects go in Topics, as links.
+    Sensitivity:
+      kind: enum
+      values: [Personal, Health, Confidential]
+      description: Only when needed; will route these notes to local agents only.
+
+types:
+  Person:
+    folder: Notes/People
+    description: A person (collaborator, author, friend, family member, contact).
+    template: [First Name, Last Name, ORCID, Email, Affiliations, Relationship]
+    fields:
+      First Name: {kind: string}
+      Last Name: {kind: string}
+      ORCID: {kind: orcid}
+      Email: {kind: "list[string]"}
+      Affiliations:
+        kind: list[link]
+        target: [Organization]
+        description: Current affiliations; roles with a period go in a Role note.
+      Relationship:
+        kind: list[enum]
+        values: [Self, Collaborator, Colleague, Supervisor, Supervisee, Student, Mentor, Friend, Family, Contact, Author]
+        description: Declared relation to the vault owner. `Author` alone means a person known only as an author.
+      Topics: {kind: "list[link]", target: [Topic]}
+      Website: {kind: url}
+      Cover: {kind: link, description: A photo.}
+    body: |
+      ## Facts
+
+      ## Reported
+      <!-- What others reported: always say who and when. -->
+
+      ## Impressions
+      <!-- The owner's own impressions only, dated and in context: "- 2026-10-26 (context): ...". -->
+
+      ## Links
+
+      ### Roles
+      ![[Roles.base#Person's Roles]]
+
+      ### Projects
+      ![[Projects.base#Person's Projects]]
+
+      ### Articles
+      ![[Articles.base#Author's Articles]]
+
+      ### Events
+      ![[Events.base#Person's Events]]
+
+      ## Sources
+
+  Organization:
+    folder: Notes/Organizations
+    description: University, lab, institute, company, funder.
+    template: [Kind, Parent, Country, City]
+    fields:
+      Kind:
+        kind: enum
+        values: [University, Institute, Lab, Company, Funder, Publisher, Agency, School, Association, Other]
+      Parent: {kind: link, target: [Organization]}
+      Country: {kind: string, description: ISO 3166-1 alpha-2 code.}
+      City: {kind: string}
+      Website: {kind: url}
+      ROR: {kind: url, description: ROR identifier, when it exists.}
+    body: |
+      ## Notes
+
+      ## Links
+
+      ### Sub-organizations
+      ![[Organizations.base#Sub-organizations]]
+
+      ### Roles
+      ![[Roles.base#Organization's Roles]]
+
+      ### People
+      ![[People.base#Affiliated People]]
+
+      ### Projects
+      ![[Projects.base#Organization's Projects]]
+
+      ## Sources
+
+  Role:
+    folder: Notes/Roles
+    description: A role with a period, from a person to an organization or a project. No end date means current.
+    required: [Person, Role]
+    template: [Person, Role, Organization, Start, End]
+    fields:
+      Person: {kind: link, target: [Person]}
+      Role: {kind: string}
+      Organization: {kind: link, target: [Organization]}
+      Project: {kind: link, target: [Project]}
+      Start: {kind: date}
+      End: {kind: date}
+    body: |
+      ## Notes
+
+      ## Sources
+
+  Project:
+    folder: Notes/Projects
+    description: Research, software, grant, event, teaching or personal project.
+    required: [Kind, Status]
+    template: [Kind, Status, Collaborators, Topics]
+    kind_templates:
+      Research: [Kind, Status, Collaborators, Organizations, Topics]
+      Software: [Kind, Status, PI, Collaborators, Repository, Topics]
+      Grant: [Kind, Status, Programme, Funder, Host, Supervisor, PI, Amount, Currency, Start, End, Deadline, Reference, Collaborators, Topics]
+    fields:
+      Kind: {kind: enum, values: [Research, Software, Grant, Event, Teaching, Personal, Admin]}
+      Status:
+        kind: enum
+        values: [Idea, Planned, Drafting, Submitted, Under Evaluation, Awarded, Rejected, In Progress, On Hold, Completed, Closed]
+        description: For grants it separates application (Drafting, Submitted, Under Evaluation), outcome (Awarded, Rejected), activity (In Progress, until the final report is sent) and administrative closure (Closed).
+      Collaborators: {kind: "list[link]", target: [Person]}
+      Organizations: {kind: "list[link]", target: [Organization]}
+      Topics: {kind: "list[link]", target: [Topic]}
+      Parent: {kind: link, target: [Project]}
+      Related: {kind: "list[link]", target: [Project]}
+      Start: {kind: date}
+      End: {kind: date}
+      Repository: {kind: url, kinds: [Software]}
+      Funder: {kind: link, target: [Organization], kinds: [Grant]}
+      Programme: {kind: string, kinds: [Grant], description: Funding programme or call.}
+      Host: {kind: link, target: [Organization], kinds: [Grant]}
+      Supervisor: {kind: link, target: [Person], kinds: [Grant]}
+      PI: {kind: link, target: [Person], kinds: [Grant, Software, Research], description: Principal investigator.}
+      Amount: {kind: number, kinds: [Grant]}
+      Currency: {kind: string, kinds: [Grant], description: ISO 4217 code.}
+      Reference: {kind: string, kinds: [Grant], description: Contract or decision number.}
+      Deadline: {kind: date, kinds: [Grant], description: Official deadline, checked on the source.}
+    body: |
+      ## Goal
+
+      ## Notes
+
+      ## References
+      <!-- Links to the articles and books relevant to the project. -->
+
+      ## Links
+
+      ### Roles
+      ![[Roles.base#Project's Roles]]
+
+      ### Tasks
+      ![[Tasks.base#Project Tasks]]
+
+      ### Events
+      ![[Events.base#Project Events]]
+
+      ### Articles
+      ![[Articles.base#Project Articles]]
+
+      ## Sources
+
+  Topic:
+    folder: Notes/Topics
+    description: Research topic or concept; a wiki page linked to its sources.
+    template: [Broader, Related]
+    fields:
+      Broader: {kind: "list[link]", target: [Topic]}
+      Related: {kind: "list[link]", target: [Topic]}
+    body: |
+      ## Definition
+
+      ## My Notes
+
+      ## Generated Summary
+      <!-- Model-written text only inside an [!ai] callout with date, model and sources. -->
+
+      ## Links
+
+      ### Subtopics
+      ![[Topics.base#Subtopics]]
+
+      ### Articles
+      ![[Articles.base#Topic Articles]]
+
+      ### Projects
+      ![[Projects.base#Topic Projects]]
+
+  Article:
+    folder: Library/Articles
+    description: Article or preprint. Its BibTeX entry is a property; `./sb lit check` compares it with Crossref or arXiv.
+    required: [Title]
+    template: [Title, Authors, Journal, Year, DOI, arXiv, PDF, Read, Topics, BibTeX]
+    fields:
+      Title: {kind: string}
+      Authors: {kind: "list[link]", target: [Person]}
+      Journal: {kind: link, target: [Journal]}
+      Year: {kind: int}
+      DOI: {kind: doi}
+      arXiv: {kind: string}
+      URL: {kind: url, description: Only when there is no DOI or arXiv identifier.}
+      PDF: {kind: "list[link]"}
+      Read: {kind: bool}
+      Topics: {kind: "list[link]", target: [Topic]}
+      Cover: {kind: link, description: Cover image for the cards view.}
+      Related: {kind: "list[link]", target: [Article, Book]}
+      Version Of: {kind: link, target: [Article], description: Links a preprint and its published version.}
+      BibTeX: {kind: text, description: The BibTeX entry, multi-line; the citation key is used by exports and PDF names.}
+    body: |
+      ## Abstract
+
+      ## My Notes
+
+      ## Generated Summary
+      <!-- Model-written text only inside an [!ai] callout with date, model and sources. -->
+
+  Book:
+    folder: Library/Books
+    description: Book or monograph. Its BibTeX entry is a property.
+    required: [Title]
+    template: [Title, Authors, Publisher, Year, ISBN, DOI, PDF, Read, Topics, BibTeX]
+    fields:
+      Title: {kind: string}
+      Authors: {kind: "list[link]", target: [Person]}
+      Publisher: {kind: string}
+      Year: {kind: int}
+      ISBN: {kind: string}
+      DOI: {kind: doi}
+      URL: {kind: url}
+      PDF: {kind: "list[link]"}
+      Read: {kind: bool}
+      Topics: {kind: "list[link]", target: [Topic]}
+      Cover: {kind: link}
+      BibTeX: {kind: text, description: The BibTeX entry, multi-line.}
+    body: |
+      ## Description
+
+      ## My Notes
+
+  Idea:
+    folder: Notes/Ideas
+    description: A research idea or direction, not yet a project.
+    template: [Projects, Topics]
+    fields:
+      Projects: {kind: "list[link]", target: [Project]}
+      Topics: {kind: "list[link]", target: [Topic]}
+    body: |
+      ## Idea
+
+      ## Links
+
+  Method:
+    folder: Notes/Methods
+    description: Long-form technical derivation (LaTeX), reusable across projects.
+    template: [Topics]
+    fields:
+      Topics: {kind: "list[link]", target: [Topic]}
+      Projects: {kind: "list[link]", target: [Project]}
+    body: |
+      ## Derivation
+
+  Peer Review:
+    folder: Notes/Peer Reviews
+    description: A manuscript to review, or the report written for it. Other people's unpublished work, so its Sensitivity is Confidential.
+    template: [Status, Due Date, Year, Journal, Editor]
+    fields:
+      Status: {kind: enum, values: [Not Started, In Progress, Submitted, Completed, Declined]}
+      Due Date: {kind: date}
+      Year: {kind: int}
+      Journal: {kind: link, target: [Journal]}
+      Editor: {kind: link, target: [Person]}
+    body: |
+      ## Manuscript Info
+
+      ## Round 1
+
+      ### Material Received
+
+      ## Private Notes
+
+      ## Tasks
+
+  Journal:
+    folder: Library/Journals
+    description: Journal or publication venue; the file name is the full name.
+    template: [Abbreviation]
+    fields:
+      Abbreviation: {kind: string, description: ISO 4 abbreviation, used in exported BibTeX.}
+      Website: {kind: url}
+    body: |
+      ## Links
+
+      ### Articles
+      ![[Articles.base#Journal Articles]]
+
+  Task:
+    folder: Tasks
+    description: A concrete action.
+    template: [Done, Assignees, Priority, Due Date, Projects]
+    fields:
+      Done: {kind: bool}
+      Assignees: {kind: "list[link]", target: [Person]}
+      Priority: {kind: enum, values: [High, Medium, Low]}
+      Due Date: {kind: date, description: A real deadline; write its source in the body.}
+      Projects: {kind: "list[link]", target: [Project]}
+      Scheduled: {kind: date, description: Planned date.}
+      Depends On: {kind: "list[link]", target: [Task]}
+      Recurrence: {kind: string, description: "iCalendar rule, e.g. FREQ=WEEKLY;BYDAY=MO."}
+    body: |
+      ## Details
+
+  Event:
+    folder: Records
+    description: Dated event (meeting, talk, conference, visit, deadline).
+    required: [Kind, Date]
+    template: [Kind, Date, Participants, Projects]
+    fields:
+      Kind: {kind: enum, values: [Meeting, Talk, Conference, School, Visit, Call, Deadline, Trip, Exam, Other]}
+      Date: {kind: date}
+      End Date: {kind: date}
+      Status: {kind: enum, values: [Proposed, Tentative, Confirmed, Cancelled]}
+      Participants: {kind: "list[link]", target: [Person]}
+      Projects: {kind: "list[link]", target: [Project]}
+      Topics: {kind: "list[link]", target: [Topic]}
+      Location: {kind: string}
+    body: |
+      ## Notes
+
+      ## Decisions
+
+      ## Actions
