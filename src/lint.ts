@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { checkValue, isEmpty, type Field, Schema, type TypeSpec } from "./schema";
-import { asDate, closest, compare, datedName, daysBetween, fold, linkKey, splitDatedName } from "./text";
+import { asDate, asMoment, closest, compare, datedName, daysBetween, fold, linkKey, splitDatedName } from "./text";
 import type { Note, Vault } from "./vault";
 
 export type Severity = "error" | "warning" | "info";
@@ -158,8 +158,11 @@ function checkDates(note: Note, spec: TypeSpec, fields: Map<string, Field>, sche
   for (const field of fields.values()) {
     const day = asDate(note.meta[field.name]);
     if (!day) continue;
-    const before = field.after ? asDate(note.meta[field.after]) : null;
+    const start = field.after ? note.meta[field.after] : undefined;
+    const before = asDate(start);
+    const [from, to] = [asMoment(start), asMoment(note.meta[field.name])];
     if (before && day < before) add("error", "date-order", note.path, 1, `${field.name} (${day}) is before ${field.after} (${before})`);
+    else if (from && to && to <= from) add("error", "date-order", note.path, 1, `${field.name} (${to.slice(11, 16)}) is not after ${field.after} (${from.slice(11, 16)})`);
     if (field.deadline && open && day < today) {
       const still = [...(spec.open?.keys() ?? [])].filter((key) => !isEmpty(note.meta[key])).map((key) => `${key} is still ${note.meta[key]}`);
       const close = closingHint(spec);

@@ -20,6 +20,13 @@ export function asDate(value: unknown): string | null {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day ? day : null;
 }
 
+/** Day and time as "YYYY-MM-DDTHH:mm:ss", or null when the value has no valid time. */
+export function asMoment(value: unknown): string | null {
+  const day = asDate(value);
+  const time = day && typeof value === "string" ? /[T ]([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(value.trim()) : null;
+  return time ? `${day}T${time[1]}:${time[2]}:${time[3] ?? "00"}` : null;
+}
+
 /** The name of a note dated by its type: "Title (YYYY-MM-DD)". */
 export const datedName = (title: string, day: string): string => `${title} (${day})`;
 

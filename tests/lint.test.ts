@@ -75,6 +75,15 @@ test("a date before the one it must follow is an error", () => {
   assert.ok(!codes({ "Notes/Roles/R.md": note("Type: Role\nStart: 2026-01-01\nEnd: 2026-02-01") }).includes("date-order"));
 });
 
+test("on the same day, a time before or equal to the one it must follow is an error", () => {
+  const event = (start: string, end: string) => codes({ "Records/M (2026-11-08).md": note(`Type: Event\nKind: Meeting\nDate: ${start}\nEnd Date: ${end}`) });
+  assert.ok(event("2026-11-08T12:30", "2026-11-08T12:15").includes("date-order"));
+  assert.ok(event("2026-11-08T12:30:00", "2026-11-08T12:30").includes("date-order"));
+  assert.ok(!event("2026-11-08T12:30", "2026-11-08T12:45:00").includes("date-order"));
+  assert.ok(!event("2026-11-08T23:30", "2026-11-09T00:30").includes("date-order"));
+  assert.ok(!event("2026-11-08T12:30", "2026-11-08").includes("date-order"));
+});
+
 test("a typed note with no links in either direction is isolated", () => {
   const vault = vaultOf({ "Notes/Ideas/Alone.md": note("Type: Idea") });
   const isolated = lint(vault, schema, "2026-11-04").filter((issue) => issue.code === "isolated").map((issue) => issue.path);

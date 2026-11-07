@@ -81,7 +81,7 @@ types:
       status: {kind: enum, values: [Idea, Active, Submitted, Done, Rejected]}
       funder: {kind: link, target: [Organization], kinds: [Grant]}   # only for grants
       start: {kind: date}
-      end: {kind: date, after: start, deadline: true, agenda: ends}  # never before start
+      end: {kind: date, after: start, deadline: true, agenda: ends}  # never before start; with times, after it
 ```
 
 **Field kinds**: `string`, `text`, `int`, `number`, `bool` (checkbox), `date` (YYYY-MM-DD), `datetime` (YYYY-MM-DD or YYYY-MM-DDTHH:mm; Obsidian's date and time), `url`, `doi`, `orcid`, `enum` (with `values`), `link` (`"[[Note]]"`, with the allowed types in `target`), and `list[…]` of any of them. A field can be written as just its kind: `title: string`.
@@ -146,7 +146,7 @@ The calendar commands need Obsidian for Mac and a local helper that reads and wr
 
 ```yaml
   Event:
-    folder: Records
+    folder: Events
     name_date: Date             # notes named "Title (YYYY-MM-DD)"
     calendar:
       start: Date               # required: date, or date and time (kind datetime)
