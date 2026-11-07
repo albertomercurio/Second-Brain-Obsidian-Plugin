@@ -130,3 +130,27 @@ test("without a schema, the checks that need none still run", () => {
   const empty = new Schema(null, "type");
   assert.deepEqual(codes({ "a.md": "[[Nowhere]]\n" }, "2026-10-26", empty), ["link-broken"]);
 });
+
+test("a dated name ends with the day of its property", () => {
+  const event = (date: string) => note(`Type: Event\nKind: Meeting\nDate: ${date}`);
+  const issues = issuesOf({
+    "Records/Sync (2026-05-14).md": event("2026-05-14T10:00"),
+    "Records/2026-05-14 Old style.md": event("2026-05-14"),
+    "Records/Wrong day (2026-05-13).md": event("2026-05-14"),
+  }).filter((issue) => issue.code === "event-name-date");
+  assert.deepEqual(
+    issues.map((issue) => [issue.path, issue.hint]),
+    [
+      ["Records/2026-05-14 Old style.md", 'rename it "Old style (2026-05-14)"'],
+      ["Records/Wrong day (2026-05-13).md", 'rename it "Wrong day (2026-05-14)"'],
+    ]
+  );
+});
+
+test("a date and time at 00:00 is probably a whole day", () => {
+  const issues = issuesOf({
+    "Records/Party (2026-05-14).md": note("Type: Event\nKind: Other\nDate: 2026-05-14T00:00"),
+    "Records/Night shift (2026-05-15).md": note("Type: Event\nKind: Other\nDate: 2026-05-15T00:30"),
+  }).filter((issue) => issue.code === "datetime-midnight");
+  assert.deepEqual(issues.map((issue) => [issue.path, issue.hint]), [["Records/Party (2026-05-14).md", "for a whole day, keep only the day: 2026-05-14"]]);
+});

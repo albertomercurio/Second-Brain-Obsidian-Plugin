@@ -7,7 +7,7 @@
 
 import { renderNote } from "./frontmatter";
 import type { Schema } from "./schema";
-import { asDate, nfc } from "./text";
+import { asDate, datedName, nfc, splitDatedName } from "./text";
 import type { Meta, Vault } from "./vault";
 
 /** The properties the commands use, from the `calendar` rule of a type. */
@@ -25,6 +25,8 @@ export interface CalendarSpec {
   email: string | null;
   /** Where the link that opens the event in the calendar is kept; required. */
   link: string;
+  /** Names end with the day, "Title (YYYY-MM-DD)": the type has `name_date`. */
+  dated: boolean;
   /** Value of the kind property for notes made from an event. */
   kind: string | null;
 }
@@ -76,6 +78,7 @@ export function calendarSpec(schema: Schema): CalendarSpec | null {
       email: rule.email ?? null,
       link: rule.link,
       kind: rule.kind ?? null,
+      dated: spec.nameDate !== null,
     };
   }
   return null;
@@ -114,8 +117,8 @@ function moment(value: unknown): { day: string; time: string | null } | null {
 
 /** The fields of the event a note describes. Throws with a readable message when they are not enough. */
 export function draftFromNote(name: string, meta: Meta, spec: CalendarSpec): Draft {
-  const title = clean(name.replace(/^\d{4}-\d{2}-\d{2}(?:\s+|$)/, ""));
-  if (!title) throw new Error("the note needs a title after the date in its name");
+  const title = clean(spec.dated ? splitDatedName(name)?.title ?? name : name);
+  if (!title) throw new Error("the note needs a title before the date in its name");
   const start = moment(meta[spec.start]);
   if (!start) throw new Error(`the note has no ${spec.start}`);
   const end = spec.end ? moment(meta[spec.end]) : null;
@@ -151,14 +154,19 @@ export function peopleByEmail(vault: Vault, schema: Schema, spec: CalendarSpec):
 /** The property value of an instant of the helper: YYYY-MM-DDTHH:mm in the computer's time, or the day. */
 const propertyMoment = (value: string, allDay: boolean): string => (allDay ? value.slice(0, 10) : value.slice(0, 16));
 
+/** Where the note of an event goes: "Title (YYYY-MM-DD)" in the type's folder; `n` > 1 numbers a second note. */
+export function eventPath(spec: CalendarSpec, event: CalendarEvent, n = 1): string {
+  const title = (fileTitle(event.title) || "Event") + (n > 1 ? ` ${n}` : "");
+  const name = spec.dated ? datedName(title, event.start.slice(0, 10)) : title;
+  return `${spec.folder ? `${spec.folder}/` : ""}${name}.md`;
+}
+
 /**
- * A new note for an event: in the folder of the type, named "YYYY-MM-DD Title", with the
+ * A new note for an event: in the folder of the type, named as `eventPath` says, with the
  * template's properties in order. People are linked when the vault knows their address;
  * the other addresses go in the text, to be added by hand.
  */
 export function noteFromEvent(event: CalendarEvent, spec: CalendarSpec, schema: Schema, people: Map<string, string>): { path: string; text: string } {
-  const day = event.start.slice(0, 10);
-  const title = fileTitle(event.title) || "Event";
   const meta: Meta = { [schema.typeProperty]: spec.type };
   if (schema.kindProperty && spec.kind) meta[schema.kindProperty] = spec.kind;
   meta[spec.start] = propertyMoment(event.start, event.all_day);
@@ -180,6 +188,5 @@ export function noteFromEvent(event: CalendarEvent, spec: CalendarSpec, schema: 
   meta[spec.link] = event.link;
 
   const intro = others.size ? `Participants not in the vault: ${[...others].join(", ")}.\n\n` : "";
-  const folder = spec.folder ? `${spec.folder}/` : "";
-  return { path: `${folder}${day} ${title}.md`, text: renderNote(schema.conform(meta) ?? meta, intro + spec.body) };
+  return { path: eventPath(spec, event), text: renderNote(schema.conform(meta) ?? meta, intro + spec.body) };
 }

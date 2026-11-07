@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { type CalendarEvent, calendarSpec, clean, draftFromNote, eventId, fileTitle, noteFromEvent, peopleByEmail } from "../src/calendar";
+import { type CalendarEvent, calendarSpec, clean, draftFromNote, eventId, eventPath, fileTitle, noteFromEvent, peopleByEmail } from "../src/calendar";
 import { callHelper, expandHome } from "../src/helper";
 import { checkValue } from "../src/schema";
 import { propertyTypes } from "../src/templates";
@@ -27,13 +27,13 @@ test("datetime: a day, or a day and a time; an Obsidian date and time property",
 });
 
 test("a note with a time is an event with a time", () => {
-  const draft = draftFromNote("2026-11-10 Meeting with Ada", { Date: "2026-11-10T14:00", "End Date": "2026-11-10T15:30", Location: "BSP 727" }, spec);
+  const draft = draftFromNote("Meeting with Ada (2026-11-10)", { Date: "2026-11-10T14:00", "End Date": "2026-11-10T15:30", Location: "BSP 727" }, spec);
   assert.deepEqual(draft, { title: "Meeting with Ada", start: "2026-11-10T14:00", end: "2026-11-10T15:30", all_day: false, location: "BSP 727" });
-  assert.deepEqual(draftFromNote("2026-11-10 Call", { Date: "2026-11-10T09:00" }, spec), { title: "Call", start: "2026-11-10T09:00", all_day: false });
+  assert.deepEqual(draftFromNote("Call (2026-11-10)", { Date: "2026-11-10T09:00" }, spec), { title: "Call", start: "2026-11-10T09:00", all_day: false });
 });
 
 test("a note with days only is an event of whole days", () => {
-  assert.deepEqual(draftFromNote("2026-11-10 School", { Date: "2026-11-10", "End Date": "2026-11-12" }, spec), {
+  assert.deepEqual(draftFromNote("School (2026-11-10)", { Date: "2026-11-10", "End Date": "2026-11-12" }, spec), {
     title: "School",
     start: "2026-11-10",
     end: "2026-11-12",
@@ -42,10 +42,10 @@ test("a note with days only is an event of whole days", () => {
 });
 
 test("a note that cannot become an event says why", () => {
-  assert.throws(() => draftFromNote("2026-11-10 Talk", {}, spec), /no Date/);
-  assert.throws(() => draftFromNote("2026-11-10", { Date: "2026-11-10" }, spec), /title/);
-  assert.throws(() => draftFromNote("2026-11-10 Talk", { Date: "2026-11-10T10:00", "End Date": "2026-11-10" }, spec), /End Date needs a time/);
-  assert.throws(() => draftFromNote("2026-11-10 Talk", { Date: "2026-11-10", "End Date": "2026-11-10T12:00" }, spec), /Date needs a time/);
+  assert.throws(() => draftFromNote("Talk (2026-11-10)", {}, spec), /no Date/);
+  assert.throws(() => draftFromNote("(2026-11-10)", { Date: "2026-11-10" }, spec), /title/);
+  assert.throws(() => draftFromNote("Talk (2026-11-10)", { Date: "2026-11-10T10:00", "End Date": "2026-11-10" }, spec), /End Date needs a time/);
+  assert.throws(() => draftFromNote("Talk (2026-11-10)", { Date: "2026-11-10", "End Date": "2026-11-10T12:00" }, spec), /Date needs a time/);
 });
 
 test("text from the calendar cannot run Templater or make links", () => {
@@ -79,7 +79,8 @@ test("a note from an event: name, template order, people known by their address"
     ],
   };
   const { path, text } = noteFromEvent(event, spec, schema, people);
-  assert.equal(path, "Records/2026-11-10 Sync x with Ada.md");
+  assert.equal(path, "Records/Sync x with Ada (2026-11-10).md");
+  assert.equal(eventPath(spec, event, 2), "Records/Sync x with Ada 2 (2026-11-10).md");
   const [, yaml, body] = text.split("---\n");
   assert.deepEqual(parse(yaml), {
     Type: "Event",

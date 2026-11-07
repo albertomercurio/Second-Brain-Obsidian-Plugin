@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { checkValue, isEmpty, type Field, Schema, type TypeSpec } from "./schema";
-import { asDate, closest, compare, daysBetween, fold, linkKey } from "./text";
+import { asDate, closest, compare, datedName, daysBetween, fold, linkKey, splitDatedName } from "./text";
 import type { Note, Vault } from "./vault";
 
 export type Severity = "error" | "warning" | "info";
@@ -127,11 +127,29 @@ function checkFrontmatter(note: Note, schema: Schema, today: string, add: Add): 
       continue;
     }
     for (const problem of checkValue(field, value)) add("error", "field-kind", note.path, 1, `${name}: ${problem}`);
+    // Obsidian's date-and-time field writes 00:00 when only the day is edited there.
+    if (field.kind === "datetime" && typeof value === "string" && /T00:00(?::00)?$/.test(value.trim())) {
+      add("warning", "datetime-midnight", note.path, 1, `${name} is at 00:00`, `for a whole day, keep only the day: ${value.trim().slice(0, 10)}`);
+    }
     if (field.kinds.length && !isEmpty(value) && !(kind && field.kinds.includes(kind))) {
       add("warning", "field-for-kind", note.path, 1, `${name} is meant only for ${schema.kindProperty} ${field.kinds.join("/")}, not for ${kind ?? "none"}`);
     }
   }
   checkDates(note, spec, fields, schema, today, add);
+  checkDatedName(note, spec, add);
+}
+
+/** For a type with `name_date`: the name ends with that property's day, "Title (YYYY-MM-DD)". */
+function checkDatedName(note: Note, spec: TypeSpec, add: Add): void {
+  const day = spec.nameDate ? asDate(note.meta[spec.nameDate]) : null;
+  if (!day) return;
+  const parts = splitDatedName(note.name);
+  if (parts?.day === day) return;
+  const title = (parts?.title ?? note.name.replace(/^\d{4}-\d{2}-\d{2}\s*/, "")) || note.name;
+  const message = parts
+    ? `the day in the name (${parts.day}) is not ${spec.nameDate} (${day})`
+    : `the name does not end with the day of ${spec.nameDate}`;
+  add("error", `${slug(spec.name)}-name-date`, note.path, 1, message, `rename it "${datedName(title, day)}"`);
 }
 
 /** Dates in order, deadlines passed while the note is open, open notes nobody touches. */

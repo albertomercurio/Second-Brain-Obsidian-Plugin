@@ -27,7 +27,7 @@ import {
   TFolder,
 } from "obsidian";
 import { briefing } from "./src/briefing";
-import { type CalendarEvent, type CalendarSpec, calendarSpec, type Draft, draftFromNote, eventId, noteFromEvent, peopleByEmail } from "./src/calendar";
+import { type CalendarEvent, type CalendarSpec, calendarSpec, type Draft, draftFromNote, eventId, eventPath, noteFromEvent, peopleByEmail } from "./src/calendar";
 import { lintReport, linksReport, neighboursReport, pathReport, plural, recallReport } from "./src/commands";
 import { callHelper, expandHome } from "./src/helper";
 import { countBySeverity, type Issue, lint } from "./src/lint";
@@ -470,7 +470,7 @@ export default class SecondBrainPlugin extends Plugin {
           const { path, text } = noteFromEvent(event, spec, schema, peopleByEmail(vault, schema, spec));
           if (spec.folder && !this.app.vault.getAbstractFileByPath(spec.folder)) await this.app.vault.createFolder(spec.folder);
           let target = path;
-          for (let n = 2; this.app.vault.getAbstractFileByPath(target); n++) target = path.replace(/\.md$/, ` ${n}.md`);
+          for (let n = 2; this.app.vault.getAbstractFileByPath(target); n++) target = eventPath(spec, event, n);
           file = await this.app.vault.create(target, text);
         }
         if (file) await this.app.workspace.getLeaf(false).openFile(file);

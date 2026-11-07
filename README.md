@@ -86,9 +86,9 @@ types:
 
 **Field kinds**: `string`, `text`, `int`, `number`, `bool` (checkbox), `date` (YYYY-MM-DD), `datetime` (YYYY-MM-DD or YYYY-MM-DDTHH:mm; Obsidian's date and time), `url`, `doi`, `orcid`, `enum` (with `values`), `link` (`"[[Note]]"`, with the allowed types in `target`), and `list[…]` of any of them. A field can be written as just its kind: `title: string`.
 
-**Rules of a type**: `open` and `closed` are conditions, property → value or list of values; a note matches when any of the properties has one of the values. `agenda` puts a date in the briefing's next 30 days, with the label given (`true`: the property's name). `calendar` names the properties of the calendar commands (see Calendar).
+**Rules of a type**: `open` and `closed` are conditions, property → value or list of values; a note matches when any of the properties has one of the values. `agenda` puts a date in the briefing's next 30 days, with the label given (`true`: the property's name). `calendar` names the properties of the calendar commands (see Calendar). `name_date` names a date property whose day ends every note's name, in parentheses: `Meeting with Ada (2026-11-10)`; titles repeat, the day keeps names unique.
 
-**Codes**. Problems that follow a rule of the schema start with the type in lowercase with dashes: `person-duplicate`, `task-overdue`, `project-stale`. The others: `yaml-invalid`, `type-missing`, `type-unknown`, `folder-mismatch`, `field-required`, `field-unknown`, `field-kind`, `field-for-kind`, `date-order`, `link-broken`, `link-unquoted`, `link-ambiguous`, `link-target-type`, `name-duplicate`, `alias-collision`, `isolated`, `no-backlinks`, `injection-suspect`, `templater-command`, `filename-chars`, `file-large`, `file-too-large`, `base-link-broken`, `base-folder-broken`, `schema-missing`, `schema-invalid`.
+**Codes**. Problems that follow a rule of the schema start with the type in lowercase with dashes: `person-duplicate`, `task-overdue`, `project-stale`, `event-name-date`. The others: `yaml-invalid`, `type-missing`, `type-unknown`, `folder-mismatch`, `field-required`, `field-unknown`, `field-kind`, `field-for-kind`, `datetime-midnight` (00:00, which Obsidian's date-and-time field writes when only the day is edited), `date-order`, `link-broken`, `link-unquoted`, `link-ambiguous`, `link-target-type`, `name-duplicate`, `alias-collision`, `isolated`, `no-backlinks`, `injection-suspect`, `templater-command`, `filename-chars`, `file-large`, `file-too-large`, `base-link-broken`, `base-folder-broken`, `schema-missing`, `schema-invalid`.
 
 ## Recall tests
 
@@ -147,6 +147,7 @@ The calendar commands need Obsidian for Mac and a local helper that reads and wr
 ```yaml
   Event:
     folder: Records
+    name_date: Date             # notes named "Title (YYYY-MM-DD)"
     calendar:
       start: Date               # required: date, or date and time (kind datetime)
       end: End Date             # for a whole-day event, the last day
@@ -157,8 +158,8 @@ The calendar commands need Obsidian for Mac and a local helper that reads and wr
       kind: Meeting             # kind of the notes made from events
 ```
 
-- *Add this event to the calendar*, on a note of that type: shows the event (title from the note's name without its date, start and end, location) and the calendar to use, then creates it, or updates the one in `link`, and writes the link in the note. It never invites anyone.
-- *New note from a calendar event*: lists the events of the last week and of the next two, nearest first; for the one chosen, makes a note named `YYYY-MM-DD Title` in the type's folder, with the template's properties, the people whose address a note knows, and the other addresses in the text. When the event already has a note, opens it. Text from the calendar loses Templater tags and wikilink brackets.
+- *Add this event to the calendar*, on a note of that type: shows the event (title from the note's name without the day, start and end, location) and the calendar to use, then creates it, or updates the one in `link`, and writes the link in the note. It never invites anyone.
+- *New note from a calendar event*: lists the events of the last week and of the next two, nearest first; for the one chosen, makes a note in the type's folder, named `Title (YYYY-MM-DD)` when the type has `name_date`, with the template's properties, the people whose address a note knows, and the other addresses in the text. When the event already has a note, opens it. Text from the calendar loses Templater tags and wikilink brackets.
 - *Open this event in the calendar*: opens the note's `link`.
 
 The helper answers on a Unix socket, one JSON line each way: `{"tool": "…", "arguments": {…}}` → `{"ok": true, "result": …}` or `{"ok": false, "error": "…"}`. The commands use `health` (`accounts`: `role` and, when found, `source`), `list_events` (`from`, `to`, `limit` → `events`), `create_event` (`account`, `title`, `start`, `end`, `all_day`, `location`, `url`) and `update_event` (`id` and the same fields). An event has `id`, `title`, `start` and `end` (ISO 8601 with the computer's offset; for a whole day, YYYY-MM-DD with the last day included), `all_day`, `location`, `account`, `organizer` and `attendees` (`email`, `me`), and `link` (`ical://ekevent/<id>?…`, which macOS Calendar opens). The helper decides what may be written; the plugin only asks.

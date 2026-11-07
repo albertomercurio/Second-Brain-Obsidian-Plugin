@@ -51,6 +51,8 @@ export interface TypeSpec {
   briefing: string[];
   /** Role → property, for the calendar commands: start, end, location, participants, email, link, kind. */
   calendar: Record<string, string> | null;
+  /** Property whose day ends the note's name, in parentheses: "Title (YYYY-MM-DD)". */
+  nameDate: string | null;
 }
 
 export const isList = (field: Field): boolean => field.kind.startsWith("list[");
@@ -131,6 +133,7 @@ export class Schema {
         personName: personName.length === 2 ? [personName[0], personName[1]] : null,
         briefing: strings(spec.briefing),
         calendar: readNames(spec.calendar),
+        nameDate: typeof spec.name_date === "string" ? spec.name_date : null,
       });
     }
   }

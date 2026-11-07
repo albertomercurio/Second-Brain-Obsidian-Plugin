@@ -20,6 +20,15 @@ export function asDate(value: unknown): string | null {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day ? day : null;
 }
 
+/** The name of a note dated by its type: "Title (YYYY-MM-DD)". */
+export const datedName = (title: string, day: string): string => `${title} (${day})`;
+
+/** Title and day of a dated name, or null when the name does not end with a valid day in parentheses. */
+export function splitDatedName(name: string): { title: string; day: string } | null {
+  const match = /^(.*?)\s*\((\d{4}-\d{2}-\d{2})\)$/.exec(name.trim());
+  return match && asDate(match[2]) ? { title: match[1], day: match[2] } : null;
+}
+
 /** Days from `from` to `to`, both YYYY-MM-DD. */
 export const daysBetween = (from: string, to: string): number =>
   Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);

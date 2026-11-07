@@ -346,6 +346,7 @@ types:
     required: [Kind, Date]
     template: [Kind, Date, Participants, Projects]
     closed: {Status: Cancelled}
+    name_date: Date
     calendar: {start: Date, end: End Date, location: Location, participants: Participants, email: Email, link: Calendar Event, kind: Meeting}
     fields:
       Kind: {kind: enum, values: [Meeting, Talk, Conference, School, Visit, Call, Deadline, Trip, Exam, Other]}
