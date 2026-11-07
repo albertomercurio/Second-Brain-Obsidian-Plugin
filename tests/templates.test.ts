@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { propertyTypes, templateFiles } from "../src/templates";
-import { schema } from "./helpers";
+import { completeNew, propertyTypes, templateFiles } from "../src/templates";
+import { note, schema } from "./helpers";
 
 test("each type has a template: its properties in order, then its body", () => {
   const task = templateFiles(schema).get("Task")!;
@@ -16,4 +16,21 @@ test("property types come from the schema and keep the rest of the file", () => 
   assert.equal(written.types.Read, "checkbox");
   assert.equal(written.types.Year, "number");
   assert.equal(written.types.Authors, "multitext");
+});
+
+test("a new note with a type gets its template: properties in order, values kept, then the body", () => {
+  const done = completeNew(note("Type: Task\nPriority: High"), schema)!;
+  assert.match(done, /^---\nType: Task\nDone: false\nAssignees:\nPriority: High\nDue Date:\nProjects:\n---\n## Details\n/);
+});
+
+test("a new note follows the template of its kind", () => {
+  const done = completeNew(note("Type: Project\nKind: Grant\nStatus: Drafting"), schema)!;
+  assert.match(done, /^---\nType: Project\nKind: Grant\nStatus: Drafting\nProgramme:\nFunder:/);
+});
+
+test("notes with text, without a type or of an unknown type stay as they are", () => {
+  assert.equal(completeNew(note("Type: Task", "Call Ada.\n"), schema), null);
+  assert.equal(completeNew(note("Status: Drafting"), schema), null);
+  assert.equal(completeNew(note("Type: Recipe"), schema), null);
+  assert.equal(completeNew("", schema), null);
 });

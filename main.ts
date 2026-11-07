@@ -36,9 +36,9 @@ import { updateSchema, updateSettings, updateView } from "./src/references";
 import { ReportModal } from "./src/ReportModal";
 import { Schema } from "./src/schema";
 import { DEFAULT_SETTINGS, folderList, isIgnored, readSettings, renamedSettings, type Settings } from "./src/settings";
-import { propertyTypes, templateFiles } from "./src/templates";
+import { completeNew, propertyTypes, templateFiles } from "./src/templates";
 import { addDays, asDate, localDate } from "./src/text";
-import { hasText, type IndexedFile, type IndexedLink, type Note, Vault } from "./src/vault";
+import { hasText, type IndexedFile, type IndexedLink, type Note, splitFrontmatter, Vault } from "./src/vault";
 
 const NOTE_FLAGS: CliFlags = {
   file: { value: "<name>", description: "Note name or alias (default: the active note)" },
@@ -56,6 +56,8 @@ export default class SecondBrainPlugin extends Plugin {
   private refresh = debounce(() => void this.run(() => this.refreshState()), 3000, true);
   /** The calendar rule of the schema, as of the last check: the palette shows the commands where they apply. */
   private calendar: CalendarSpec | null = null;
+  /** Notes created since Obsidian started, until they have text: completed from their template once they have a type. */
+  private fresh = new Set<string>();
 
   async onload(): Promise<void> {
     this.settings = readSettings(await this.loadData());
@@ -76,6 +78,22 @@ export default class SecondBrainPlugin extends Plugin {
       this.registerEvent(this.app.vault.on("rename", changed));
       // Links are read from Obsidian's index: check again once it has caught up.
       this.registerEvent(this.app.metadataCache.on("resolved", () => this.refresh()));
+      // New notes: a view's New button writes the type after creating the file.
+      this.registerEvent(
+        this.app.vault.on("create", (file) => {
+          if (file instanceof TFile && file.extension === "md" && this.settings.completeNewNotes) this.fresh.add(file.path);
+        })
+      );
+      this.registerEvent(
+        this.app.vault.on("rename", (file, oldPath) => {
+          if (this.fresh.delete(oldPath)) this.fresh.add(file.path);
+        })
+      );
+      this.registerEvent(
+        this.app.metadataCache.on("changed", (file) => {
+          if (this.fresh.has(file.path)) void this.run(() => this.completeNote(file));
+        })
+      );
     });
 
     this.addCommand({
@@ -384,6 +402,19 @@ export default class SecondBrainPlugin extends Plugin {
     }).open();
   }
 
+  /** A new note gets the properties and body of its template, once it has a type and while it has no text. */
+  private async completeNote(file: TFile): Promise<void> {
+    const text = await this.app.vault.read(file);
+    if (splitFrontmatter(text).body.trim()) {
+      this.fresh.delete(file.path);
+      return;
+    }
+    const { schema, problem } = await this.loadSchema();
+    if (problem || !completeNew(text, schema)) return;
+    this.fresh.delete(file.path);
+    await this.app.vault.process(file, (current) => completeNew(current, schema) ?? current);
+  }
+
   private async conformActive(file: TFile): Promise<void> {
     const [vault, schema] = await Promise.all([this.loadVault(), this.requireSchema()]);
     const note = vault.notes.get(file.path);
@@ -524,7 +555,7 @@ class SecondBrainSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     const settings = this.plugin.settings;
     containerEl.empty();
-    const text = (name: string, description: string, key: Exclude<keyof Settings, "ignoredFolders">) =>
+    const text = (name: string, description: string, key: Exclude<keyof Settings, "ignoredFolders" | "completeNewNotes">) =>
       new Setting(containerEl)
         .setName(name)
         .setDesc(description)
@@ -553,6 +584,15 @@ class SecondBrainSettingTab extends PluginSettingTab {
           })
       );
     text("Templates folder", "Where the templates command writes a template for each type.", "templatesFolder");
+    new Setting(containerEl)
+      .setName("Complete new notes")
+      .setDesc("A note created in Obsidian gets the properties and the body of its type's template as soon as it has a type, while it has no text. Turn it off if another plugin applies templates.")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.completeNewNotes).onChange(async (value) => {
+          settings.completeNewNotes = value;
+          await this.plugin.saveSettings();
+        })
+      );
     text("Briefing file", "A page of starting context for agents, rewritten after every change. Leave empty for none.", "briefingFile");
     text("Log file", "Where the conform command records the notes it changed; its latest entries go in the briefing.", "logFile");
     text("Recall tests file", "Questions with a known answer, solved through the links.", "recallFile");

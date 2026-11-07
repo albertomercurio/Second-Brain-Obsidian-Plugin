@@ -1,10 +1,12 @@
 // ---------------------------------------------------------------------------
-// What the schema generates: note templates (applied by Templater) and the
-// property types Obsidian shows.
+// What the schema generates: note templates, the completion of new notes and
+// the property types Obsidian shows.
 // ---------------------------------------------------------------------------
 
+import { parse } from "yaml";
 import { renderNote } from "./frontmatter";
 import { baseKind, isList, type Schema } from "./schema";
+import { type Meta, splitFrontmatter } from "./vault";
 
 /** Template name → text: one for each type, one for each kind with its own properties. */
 export function templateFiles(schema: Schema): Map<string, string> {
@@ -19,6 +21,28 @@ export function templateFiles(schema: Schema): Map<string, string> {
     }
   }
   return files;
+}
+
+/**
+ * A new note completed from its template: the properties of its type and kind in
+ * order, values already written kept, then the body of the type. Only for a note
+ * of a known type whose body is still empty; otherwise null.
+ */
+export function completeNew(text: string, schema: Schema): string | null {
+  const { raw, body } = splitFrontmatter(text);
+  if (raw === null || body.trim()) return null;
+  let meta: unknown;
+  try {
+    meta = parse(raw);
+  } catch {
+    return null;
+  }
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
+  const type = (meta as Meta)[schema.typeProperty];
+  const spec = typeof type === "string" ? schema.types.get(type) : undefined;
+  const next = spec && schema.conform(meta as Meta);
+  if (!spec || (!next && !spec.body.trim())) return null;
+  return renderNote(next ?? (meta as Meta), spec.body);
 }
 
 const OBSIDIAN_TYPES: Record<string, string> = { bool: "checkbox", date: "date", datetime: "datetime", int: "number", number: "number" };

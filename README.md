@@ -4,7 +4,7 @@ Checks an Obsidian vault against a schema of note types and reads its links as t
 
 - **Lint**: property names and values against the schema, broken and ambiguous links, duplicates, dates in the wrong order or passed, notes nobody links to, text that looks like an instruction to an AI agent. Errors and warnings stay in the status bar, updated after every change; a click lists them.
 - **Typed relations**: a link in the property `Collaborators` is a `Collaborators` relation, and the reverse one is computed, never written. `links` groups a note's links by relation, `path` finds the shortest chain between two notes, `neighbors` lists the notes within N steps.
-- **Templates**: note templates and Obsidian property types are generated from the schema; `conform` gives a note the properties of its template, in order.
+- **Templates**: note templates and Obsidian property types are generated from the schema; a new note gets its template as soon as it has a type, wherever it is; `conform` gives a note the properties of its template, in order.
 - **Renames**: after a rename in Obsidian, Bases views, the schema and the settings follow.
 - **Briefing**: a one-page starting context for AI agents, kept current.
 - **Calendar** (Obsidian for Mac): add the event a note describes to the calendar, or make a note from an event, through a local helper that holds the calendar permission.
@@ -22,6 +22,7 @@ Links come from Obsidian's own index, resolved as Obsidian resolves them.
 | Briefing file | `Second Brain/briefing.md` | Rewritten after every change; always ignored. Empty: no briefing |
 | Log file | `Second Brain/log.md` | `conform` adds an entry `## [YYYY-MM-DD] conform \| …`; the latest five go in the briefing |
 | Recall tests file | `Second Brain/recall.yaml` | See below |
+| Complete new notes | on | A note created in Obsidian gets its template once it has a type (see New notes) |
 | Calendar helper socket | none | Unix socket of the calendar helper (see Calendar); `~` is the home folder. Empty: no calendar commands |
 
 ## The schema
@@ -89,6 +90,10 @@ types:
 **Rules of a type**: `open` and `closed` are conditions, property → value or list of values; a note matches when any of the properties has one of the values. `agenda` puts a date in the briefing's next 30 days, with the label given (`true`: the property's name). `calendar` names the properties of the calendar commands (see Calendar). `name_date` names a date property whose day ends every note's name, in parentheses: `Meeting with Ada (2026-11-10)`; titles repeat, the day keeps names unique.
 
 **Codes**. Problems that follow a rule of the schema start with the type in lowercase with dashes: `person-duplicate`, `task-overdue`, `project-stale`, `event-name-date`. The others: `yaml-invalid`, `type-missing`, `type-unknown`, `folder-mismatch`, `field-required`, `field-unknown`, `field-kind`, `field-for-kind`, `datetime-midnight` (00:00, which Obsidian's date-and-time field writes when only the day is edited), `date-order`, `link-broken`, `link-unquoted`, `link-ambiguous`, `link-target-type`, `name-duplicate`, `alias-collision`, `isolated`, `no-backlinks`, `injection-suspect`, `templater-command`, `filename-chars`, `file-large`, `file-too-large`, `base-link-broken`, `base-folder-broken`, `schema-missing`, `schema-invalid`.
+
+## New notes
+
+A note created in Obsidian, by a Bases view's **New** button, a click on a link or the file menu, gets the template of its type as soon as it has one: the properties of its type and kind in order, the values already written kept, then the type's `body`. The template comes from the type, not from the folder, so one folder can hold notes of many types. The plugin completes only notes created since Obsidian started and only while they have no text: it never touches a note someone has written in. Turn it off in the settings when another plugin applies templates.
 
 ## Recall tests
 

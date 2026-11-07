@@ -80,6 +80,8 @@ test("ignored folders, templates and the briefing are left out, but links to the
 test("settings: defaults, ignored paths, renames", () => {
   assert.deepEqual(readSettings(null), DEFAULT_SETTINGS);
   assert.deepEqual(readSettings({ typeProperty: " Type ", ignoredFolders: ["/Archive/", 3], other: 1 }), { ...DEFAULT_SETTINGS, typeProperty: "Type", ignoredFolders: ["Archive"] });
+  assert.equal(readSettings({ completeNewNotes: false }).completeNewNotes, false);
+  assert.equal(readSettings({ completeNewNotes: "no" }).completeNewNotes, true);
   assert.ok(isIgnored("system/generated/x.md", settings));
   assert.ok(isIgnored(".obsidian/app.json", settings));
   assert.ok(!isIgnored("system/generatedx.md", settings));

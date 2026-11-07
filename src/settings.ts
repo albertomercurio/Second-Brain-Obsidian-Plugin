@@ -20,6 +20,8 @@ export interface Settings {
   calendarSocket: string;
   /** The calendar account chosen last, offered first next time. */
   calendarAccount: string;
+  /** New notes get the properties and body of their type's template once they have a type. */
+  completeNewNotes: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   recallFile: "Second Brain/recall.yaml",
   calendarSocket: "",
   calendarAccount: "",
+  completeNewNotes: true,
 };
 
 /** Saved settings over the defaults, without unknown keys or values of the wrong type. */
@@ -42,6 +45,8 @@ export function readSettings(saved: unknown): Settings {
     const value = data[key];
     if (key === "ignoredFolders") {
       if (Array.isArray(value)) settings.ignoredFolders = folderList(value.filter((item) => typeof item === "string").join("\n"));
+    } else if (key === "completeNewNotes") {
+      if (typeof value === "boolean") settings.completeNewNotes = value;
     } else if (typeof value === "string") {
       settings[key] = value.trim();
     }
