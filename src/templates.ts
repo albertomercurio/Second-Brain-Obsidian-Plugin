@@ -21,7 +21,7 @@ export function templateFiles(schema: Schema): Map<string, string> {
   return files;
 }
 
-const OBSIDIAN_TYPES: Record<string, string> = { bool: "checkbox", date: "date", int: "number", number: "number" };
+const OBSIDIAN_TYPES: Record<string, string> = { bool: "checkbox", date: "date", datetime: "datetime", int: "number", number: "number" };
 // Obsidian's own properties: it records them in lower case, with their own type, and rewrites the file so.
 const NATIVE = ["aliases", "tags", "cssclasses"];
 

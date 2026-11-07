@@ -1,6 +1,6 @@
 {
   "name": "second-brain-plugin",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Checks an Obsidian vault against a schema of note types and reads its links as typed relations",
   "author": "Alberto Mercurio",

@@ -346,15 +346,17 @@ types:
     required: [Kind, Date]
     template: [Kind, Date, Participants, Projects]
     closed: {Status: Cancelled}
+    calendar: {start: Date, end: End Date, location: Location, participants: Participants, email: Email, link: Calendar Event, kind: Meeting}
     fields:
       Kind: {kind: enum, values: [Meeting, Talk, Conference, School, Visit, Call, Deadline, Trip, Exam, Other]}
-      Date: {kind: date, agenda: event}
-      End Date: {kind: date, after: Date}
+      Date: {kind: datetime, agenda: event}
+      End Date: {kind: datetime, after: Date}
       Status: {kind: enum, values: [Proposed, Tentative, Confirmed, Cancelled]}
       Participants: {kind: "list[link]", target: [Person]}
       Projects: {kind: "list[link]", target: [Project]}
       Topics: {kind: "list[link]", target: [Topic]}
       Location: {kind: string}
+      Calendar Event: {kind: string}
     body: |
       ## Notes
 

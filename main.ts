@@ -2,7 +2,8 @@
 // consistent, inside Obsidian, on any device. Commands in the palette and in
 // Obsidian's command line (`obsidian-cli second-brain:…`); lint and briefing
 // redone after every change. The logic is in src/, which knows nothing of
-// Obsidian: this file gives it the vault as Obsidian indexes it.
+// Obsidian: this file gives it the vault as Obsidian indexes it. On the Mac,
+// the calendar commands talk to a local helper that holds the calendar permission.
 
 import {
   App,
@@ -11,19 +12,24 @@ import {
   type CliFlags,
   debounce,
   getLinkpath,
+  Modal,
   Notice,
   parseFrontMatterAliases,
   parseYaml,
+  Platform,
   Plugin,
   PluginSettingTab,
   type Reference,
   Setting,
+  SuggestModal,
   TAbstractFile,
   TFile,
   TFolder,
 } from "obsidian";
 import { briefing } from "./src/briefing";
+import { type CalendarEvent, type CalendarSpec, calendarSpec, type Draft, draftFromNote, eventId, noteFromEvent, peopleByEmail } from "./src/calendar";
 import { lintReport, linksReport, neighboursReport, pathReport, plural, recallReport } from "./src/commands";
+import { callHelper, expandHome } from "./src/helper";
 import { countBySeverity, type Issue, lint } from "./src/lint";
 import { type RecallResult, runRecall } from "./src/recall";
 import { updateSchema, updateSettings, updateView } from "./src/references";
@@ -31,7 +37,7 @@ import { ReportModal } from "./src/ReportModal";
 import { Schema } from "./src/schema";
 import { DEFAULT_SETTINGS, folderList, isIgnored, readSettings, renamedSettings, type Settings } from "./src/settings";
 import { propertyTypes, templateFiles } from "./src/templates";
-import { localDate } from "./src/text";
+import { addDays, asDate, localDate } from "./src/text";
 import { hasText, type IndexedFile, type IndexedLink, type Note, Vault } from "./src/vault";
 
 const NOTE_FLAGS: CliFlags = {
@@ -48,6 +54,8 @@ export default class SecondBrainPlugin extends Plugin {
   private status?: HTMLElement;
   /** Lint and briefing again, a few seconds after the last change. */
   private refresh = debounce(() => void this.run(() => this.refreshState()), 3000, true);
+  /** The calendar rule of the schema, as of the last check: the palette shows the commands where they apply. */
+  private calendar: CalendarSpec | null = null;
 
   async onload(): Promise<void> {
     this.settings = readSettings(await this.loadData());
@@ -82,6 +90,37 @@ export default class SecondBrainPlugin extends Plugin {
         const file = this.app.workspace.getActiveFile();
         if (!file || file.extension !== "md") return false;
         if (!checking) void this.run(() => this.conformActive(file));
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "calendar-add",
+      name: "Add this event to the calendar",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        const type = file && this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.settings.typeProperty];
+        if (!file || !this.calendarReady() || type !== this.calendar?.type) return false;
+        if (!checking) void this.run(() => this.addToCalendar(file));
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "calendar-note",
+      name: "New note from a calendar event",
+      checkCallback: (checking) => {
+        if (!this.calendarReady()) return false;
+        if (!checking) void this.run(() => this.noteFromCalendar());
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "calendar-open",
+      name: "Open this event in the calendar",
+      checkCallback: (checking) => {
+        const file = this.app.workspace.getActiveFile();
+        const link = file && this.calendar && this.app.metadataCache.getFileCache(file)?.frontmatter?.[this.calendar.link];
+        if (typeof link !== "string" || !eventId(link)) return false;
+        if (!checking) window.open(link);
         return true;
       },
     });
@@ -176,6 +215,7 @@ export default class SecondBrainPlugin extends Plugin {
     const today = localDate();
     const issues = lint(vault, schema, today);
     if (problem) issues.unshift(problem);
+    this.calendar = calendarSpec(schema);
     return { vault, schema, issues, hasSchema: !problem, today };
   }
 
@@ -363,6 +403,82 @@ export default class SecondBrainPlugin extends Plugin {
     return true;
   }
 
+  private calendarReady(): boolean {
+    return Platform.isDesktopApp && Platform.isMacOS && Boolean(this.settings.calendarSocket) && this.calendar !== null;
+  }
+
+  /** A call to the calendar helper, which holds the calendar permission. */
+  private async helper<T>(tool: string, args: Record<string, unknown> = {}): Promise<T> {
+    if (!Platform.isDesktopApp || !Platform.isMacOS) throw new Error("the calendar commands work in Obsidian for Mac");
+    if (!this.settings.calendarSocket) throw new Error("set the socket of the calendar helper in the plugin's settings");
+    // Node's modules exist only on desktop: loaded here, so the plugin still loads on mobile.
+    const net = require("net") as typeof import("net");
+    const os = require("os") as typeof import("os");
+    return callHelper<T>(net, expandHome(this.settings.calendarSocket, os.homedir()), tool, args);
+  }
+
+  private async calendarSetup(): Promise<{ vault: Vault; schema: Schema; spec: CalendarSpec }> {
+    const [vault, schema] = await Promise.all([this.loadVault(), this.requireSchema()]);
+    const spec = calendarSpec(schema);
+    if (!spec) throw new Error("no type of the schema has a calendar rule (see the plugin's README)");
+    return { vault, schema, spec };
+  }
+
+  /** Creates the event a note describes, or updates it when the note already links one; asks first. */
+  private async addToCalendar(file: TFile): Promise<void> {
+    const { vault, spec } = await this.calendarSetup();
+    const note = vault.notes.get(file.path);
+    if (!note || note.type !== spec.type) throw new Error(`"${file.basename}" is not a note of type ${spec.type}`);
+    const draft = draftFromNote(note.name, note.meta, spec);
+    const id = eventId(note.meta[spec.link]);
+    let accounts: string[] = [];
+    if (!id) {
+      const health = await this.helper<{ accounts: { role: string; source: string | null }[] }>("health");
+      accounts = health.accounts.filter((account) => account.source).map((account) => account.role);
+      if (!accounts.length) throw new Error("the calendar helper finds no account: run its health check");
+    }
+    const url = `obsidian://open?vault=${encodeURIComponent(this.app.vault.getName())}&file=${encodeURIComponent(file.path)}`;
+    new CalendarModal(this.app, draft, accounts, this.settings.calendarAccount, async (account) => {
+      const event = id
+        ? await this.helper<CalendarEvent>("update_event", { id, ...draft, url })
+        : await this.helper<CalendarEvent>("create_event", { account, ...draft, url });
+      await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+        frontmatter[spec.link] = event.link;
+      });
+      if (!id) {
+        this.settings.calendarAccount = account;
+        await this.saveData(this.settings);
+      }
+      new Notice(`"${event.title}" ${id ? "updated in" : "added to"} the calendar (${event.account}).`, 5000);
+    }).open();
+  }
+
+  /** A note for an event of the last week or the next two; opens the note it already has. */
+  private async noteFromCalendar(): Promise<void> {
+    const { vault, schema, spec } = await this.calendarSetup();
+    const today = localDate();
+    const { events } = await this.helper<{ events: CalendarEvent[] }>("list_events", { from: addDays(today, -7), to: addDays(today, 14), limit: 500 });
+    if (!events.length) throw new Error("no events from a week ago to two weeks from now");
+    const now = Date.now();
+    events.sort((a, b) => Math.abs(Date.parse(a.start) - now) - Math.abs(Date.parse(b.start) - now));
+    new EventSuggestModal(this.app, events, (event) =>
+      void this.run(async () => {
+        const day = event.start.slice(0, 10);
+        const existing = vault.typedNotes(spec.type).find((note) => note.meta[spec.link] === event.link && asDate(note.meta[spec.start]) === day);
+        let file = existing ? this.app.vault.getFileByPath(existing.path) : null;
+        if (!existing) {
+          const { path, text } = noteFromEvent(event, spec, schema, peopleByEmail(vault, schema, spec));
+          if (spec.folder && !this.app.vault.getAbstractFileByPath(spec.folder)) await this.app.vault.createFolder(spec.folder);
+          let target = path;
+          for (let n = 2; this.app.vault.getAbstractFileByPath(target); n++) target = path.replace(/\.md$/, ` ${n}.md`);
+          file = await this.app.vault.create(target, text);
+        }
+        if (file) await this.app.workspace.getLeaf(false).openFile(file);
+        new Notice(existing ? `The event already has a note: "${existing.name}".` : `New note for "${event.title}".`, 5000);
+      })
+    ).open();
+  }
+
   /** After a rename, by any route inside Obsidian: F2, drag and drop, its command line. */
   private async updateReferences(file: TAbstractFile, oldPath: string): Promise<void> {
     const { vault } = this.app;
@@ -440,5 +556,91 @@ class SecondBrainSettingTab extends PluginSettingTab {
     text("Briefing file", "A page of starting context for agents, rewritten after every change. Leave empty for none.", "briefingFile");
     text("Log file", "Where the conform command records the notes it changed; its latest entries go in the briefing.", "logFile");
     text("Recall tests file", "Questions with a known answer, solved through the links.", "recallFile");
+    text(
+      "Calendar helper socket",
+      "Unix socket of the local calendar helper, for the calendar commands (Obsidian for Mac). Empty: no calendar commands.",
+      "calendarSocket"
+    );
+  }
+}
+
+/** When an event happens, in a line. */
+function when(start: string, end: string | undefined, allDay: boolean): string {
+  if (allDay) return end && end !== start ? `${start} → ${end}, whole days` : `${start}, whole day`;
+  const from = start.slice(0, 16).replace("T", " ");
+  if (!end) return `${from}, one hour`;
+  return end.slice(0, 10) === start.slice(0, 10) ? `${from}–${end.slice(11, 16)}` : `${from} → ${end.slice(0, 16).replace("T", " ")}`;
+}
+
+/** Shows the event before it is written; the account only for a new event. */
+class CalendarModal extends Modal {
+  private account: string;
+
+  constructor(app: App, private draft: Draft, private accounts: string[], preferred: string, private onConfirm: (account: string) => Promise<void>) {
+    super(app);
+    this.account = accounts.includes(preferred) ? preferred : accounts[0] ?? "";
+  }
+
+  onOpen(): void {
+    const { contentEl, draft } = this;
+    const update = !this.accounts.length;
+    this.titleEl.setText(update ? "Update the event in the calendar" : "Add the event to the calendar");
+    new Setting(contentEl).setName(draft.title).setDesc(when(draft.start, draft.end, draft.all_day));
+    if (draft.location) new Setting(contentEl).setName("Location").setDesc(draft.location);
+    if (!update) {
+      new Setting(contentEl)
+        .setName("Calendar")
+        .setDesc("No one is invited. To invite people, open the event in the calendar app and add them there.")
+        .addDropdown((dropdown) => {
+          for (const account of this.accounts) dropdown.addOption(account, account);
+          dropdown.setValue(this.account).onChange((value) => (this.account = value));
+        });
+    }
+    new Setting(contentEl)
+      .addButton((button) => button.setButtonText("Cancel").onClick(() => this.close()))
+      .addButton((button) =>
+        button
+          .setButtonText(update ? "Update" : "Add")
+          .setCta()
+          .onClick(async () => {
+            button.setDisabled(true);
+            try {
+              await this.onConfirm(this.account);
+              this.close();
+            } catch (err) {
+              new Notice(`Second Brain: ${err instanceof Error ? err.message : err}`, 8000);
+              button.setDisabled(false);
+            }
+          })
+      );
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
+/** The events of the calendar, nearest first; typing filters them. */
+class EventSuggestModal extends SuggestModal<CalendarEvent> {
+  constructor(app: App, private events: CalendarEvent[], private onChoose: (event: CalendarEvent) => void) {
+    super(app);
+    this.setPlaceholder("An event of the last week or the next two");
+  }
+
+  getSuggestions(query: string): CalendarEvent[] {
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+    return this.events.filter((event) => {
+      const text = `${event.title} ${event.location ?? ""} ${event.account} ${event.start.slice(0, 10)}`.toLowerCase();
+      return words.every((word) => text.includes(word));
+    });
+  }
+
+  renderSuggestion(event: CalendarEvent, el: HTMLElement): void {
+    el.createEl("div", { text: event.title });
+    el.createEl("small", { text: [when(event.start, event.end, event.all_day), event.account, event.location].filter(Boolean).join(" · ") });
+  }
+
+  onChooseSuggestion(event: CalendarEvent): void {
+    this.onChoose(event);
   }
 }

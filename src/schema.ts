@@ -9,7 +9,7 @@ import type { Meta } from "./vault";
 
 export interface Field {
   name: string;
-  /** "string", "date", "enum", "link", "list[link]", … */
+  /** "string", "date", "datetime", "enum", "link", "list[link]", … */
   kind: string;
   values: unknown[];
   /** For links: the types they may point to. */
@@ -49,6 +49,8 @@ export interface TypeSpec {
   personName: [string, string] | null;
   /** Properties shown for each open note in the briefing; empty: the type is not listed. */
   briefing: string[];
+  /** Role → property, for the calendar commands: start, end, location, participants, email, link, kind. */
+  calendar: Record<string, string> | null;
 }
 
 export const isList = (field: Field): boolean => field.kind.startsWith("list[");
@@ -56,6 +58,12 @@ export const baseKind = (field: Field): string => (isList(field) ? field.kind.sl
 
 const list = (value: unknown): unknown[] => (value === undefined || value === null ? [] : Array.isArray(value) ? value : [value]);
 const strings = (value: unknown): string[] => list(value).map(String);
+
+/** A map of names from YAML, or null when there is none. */
+function readNames(raw: unknown): Record<string, string> | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  return Object.fromEntries(Object.entries(raw).filter(([, value]) => typeof value === "string" && value) as [string, string][]);
+}
 
 function readFields(raw: Record<string, any> = {}): Map<string, Field> {
   return new Map(
@@ -122,6 +130,7 @@ export class Schema {
         expectBacklinks: spec.expect_backlinks === true,
         personName: personName.length === 2 ? [personName[0], personName[1]] : null,
         briefing: strings(spec.briefing),
+        calendar: readNames(spec.calendar),
       });
     }
   }
@@ -194,6 +203,7 @@ export function isEmpty(value: unknown): boolean {
 
 const ORCID = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
 const DOI = /^10\.\d{4,9}\/\S+$/;
+const DATETIME = /^\d{4}-\d{2}-\d{2}(?:T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?)?$/;
 const LINK_ONLY = /^\s*\[\[[^[\]\n]+\]\]\s*$/;
 
 function checkScalar(field: Field, value: unknown): string[] {
@@ -211,6 +221,8 @@ function checkScalar(field: Field, value: unknown): string[] {
       return fail("expected true or false (checkbox)", typeof value === "boolean");
     case "date":
       return fail("expected a date YYYY-MM-DD", asDate(value) !== null);
+    case "datetime":
+      return fail("expected a date YYYY-MM-DD, or a date and time YYYY-MM-DDTHH:mm", DATETIME.test(text) && asDate(text) !== null);
     case "url":
       return fail("expected an http(s) URL", /^https?:\/\//.test(text));
     case "doi":

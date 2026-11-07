@@ -16,6 +16,10 @@ export interface Settings {
   logFile: string;
   /** Questions with a known answer, solved through the links. */
   recallFile: string;
+  /** Unix socket of the local calendar helper (desktop); empty: calendar commands off. */
+  calendarSocket: string;
+  /** The calendar account chosen last, offered first next time. */
+  calendarAccount: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -26,6 +30,8 @@ export const DEFAULT_SETTINGS: Settings = {
   briefingFile: "Second Brain/briefing.md",
   logFile: "Second Brain/log.md",
   recallFile: "Second Brain/recall.yaml",
+  calendarSocket: "",
+  calendarAccount: "",
 };
 
 /** Saved settings over the defaults, without unknown keys or values of the wrong type. */
