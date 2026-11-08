@@ -251,6 +251,9 @@ export default class SecondBrainPlugin extends Plugin {
     const [vault, { schema, problem }] = await Promise.all([this.loadVault(), this.loadSchema()]);
     const today = localDate();
     const issues = lint(vault, schema, today);
+    for (const message of schema.typeConflicts()) {
+      issues.unshift({ severity: "error", code: "property-type-conflict", path: this.settings.schemaFile, line: 1, message, hint: "Obsidian keeps one type per property name: give it the same kind in every type, or another name" });
+    }
     if (problem) issues.unshift(problem);
     this.calendar = calendarSpec(schema);
     return { vault, schema, issues, hasSchema: !problem, today };

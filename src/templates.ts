@@ -5,7 +5,7 @@
 
 import { parse } from "yaml";
 import { renderNote } from "./frontmatter";
-import { baseKind, isList, type Schema } from "./schema";
+import { obsidianType, type Schema } from "./schema";
 import { type Meta, splitFrontmatter } from "./vault";
 
 /** Template name → text: one for each type, one for each kind with its own properties. */
@@ -45,7 +45,6 @@ export function completeNew(text: string, schema: Schema): string | null {
   return renderNote(next ?? (meta as Meta), spec.body);
 }
 
-const OBSIDIAN_TYPES: Record<string, string> = { bool: "checkbox", date: "date", datetime: "datetime", int: "number", number: "number" };
 // Obsidian's own properties: it records them in lower case, with their own type, and rewrites the file so.
 const NATIVE = ["aliases", "tags", "cssclasses"];
 
@@ -58,7 +57,7 @@ export function propertyTypes(schema: Schema, current: { types?: Record<string, 
       delete types[field.name];
       types[native] = native;
     } else {
-      types[field.name] = isList(field) ? "multitext" : OBSIDIAN_TYPES[baseKind(field)] ?? "text";
+      types[field.name] = obsidianType(field);
     }
   }
   return JSON.stringify({ ...current, types }, null, 2);

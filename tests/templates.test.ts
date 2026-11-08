@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { Schema } from "../src/schema";
 import { completeNew, propertyTypes, templateFiles } from "../src/templates";
 import { note, schema } from "./helpers";
 
@@ -16,6 +17,21 @@ test("property types come from the schema and keep the rest of the file", () => 
   assert.equal(written.types.Read, "checkbox");
   assert.equal(written.types.Year, "number");
   assert.equal(written.types.Authors, "multitext");
+});
+
+test("a property Obsidian would show as a date in one type and as a date and time in another is a conflict", () => {
+  assert.deepEqual(schema.typeConflicts(), []);
+  const clash = new Schema(
+    {
+      types: {
+        Event: { fields: { Date: { kind: "datetime" }, Topics: { kind: "list[link]" } } },
+        Record: { fields: { Date: { kind: "date" }, Topics: { kind: "list[link]" } } },
+        Therapy: { fields: { Date: { kind: "date" }, Dose: { kind: "string" } } },
+      },
+    },
+    "Type"
+  );
+  assert.deepEqual(clash.typeConflicts(), ["Date: datetime in Event; date in Record, Therapy"]);
 });
 
 test("a new note with a type gets its template: properties in order, values kept, then the body", () => {

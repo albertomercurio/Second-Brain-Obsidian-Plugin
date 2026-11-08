@@ -58,6 +58,11 @@ export interface TypeSpec {
 export const isList = (field: Field): boolean => field.kind.startsWith("list[");
 export const baseKind = (field: Field): string => (isList(field) ? field.kind.slice(5, -1) : field.kind);
 
+const OBSIDIAN_TYPES: Record<string, string> = { bool: "checkbox", date: "date", datetime: "datetime", int: "number", number: "number" };
+
+/** The type Obsidian gives a property: one per name, for the whole vault. */
+export const obsidianType = (field: Field): string => (isList(field) ? "multitext" : OBSIDIAN_TYPES[baseKind(field)] ?? "text");
+
 const list = (value: unknown): unknown[] => (value === undefined || value === null ? [] : Array.isArray(value) ? value : [value]);
 const strings = (value: unknown): string[] => list(value).map(String);
 
@@ -147,6 +152,25 @@ export class Schema {
     const all = new Map(this.commonFields);
     for (const spec of this.types.values()) for (const [name, field] of spec.fields) all.set(name, field);
     return [...all.values()];
+  }
+
+  /**
+   * Properties defined with kinds that Obsidian would show differently in different types:
+   * Obsidian keeps one type per property name, so one of them would be wrong.
+   */
+  typeConflicts(): string[] {
+    const seen = new Map<string, Map<string, string[]>>();
+    const note = (owner: string, field: Field) => {
+      const types = seen.get(field.name) ?? new Map<string, string[]>();
+      const type = obsidianType(field);
+      types.set(type, [...(types.get(type) ?? []), owner]);
+      seen.set(field.name, types);
+    };
+    for (const field of this.commonFields.values()) note("common", field);
+    for (const spec of this.types.values()) for (const field of spec.fields.values()) note(spec.name, field);
+    return [...seen]
+      .filter(([, types]) => types.size > 1)
+      .map(([name, types]) => `${name}: ${[...types].map(([type, owners]) => `${type} in ${owners.join(", ")}`).join("; ")}`);
   }
 
   /** Folders the schema assigns to notes. */
