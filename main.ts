@@ -4,6 +4,7 @@
 // redone after every change. The logic is in src/, which knows nothing of
 // Obsidian: this file gives it the vault as Obsidian indexes it. On the Mac,
 // the calendar commands talk to a local helper that holds the calendar permission.
+// On desktop, the health import reads Health Auto Export's folders into data files.
 
 import {
   App,
@@ -35,7 +36,8 @@ import { type RecallResult, runRecall } from "./src/recall";
 import { updateSchema, updateSettings, updateView } from "./src/references";
 import { ReportModal } from "./src/ReportModal";
 import { Schema } from "./src/schema";
-import { DEFAULT_SETTINGS, folderList, isIgnored, readSettings, renamedSettings, type Settings } from "./src/settings";
+import { DEFAULT_SETTINGS, folderList, healthSources, isIgnored, readSettings, renamedSettings, type Settings } from "./src/settings";
+import { addExport, changedFiles, derive, FILES, type ImportState, loadStore, minutesFile, newCounts, outputFiles, parseJsonl, readState, type SourceFile } from "./src/health";
 import { completeNew, propertyTypes, templateFiles } from "./src/templates";
 import { addDays, asDate, localDate } from "./src/text";
 import { hasText, type IndexedFile, type IndexedLink, type Note, splitFrontmatter, Vault } from "./src/vault";
@@ -58,6 +60,9 @@ export default class SecondBrainPlugin extends Plugin {
   private calendar: CalendarSpec | null = null;
   /** Notes created since Obsidian started, until they have text: completed from their template once they have a type. */
   private fresh = new Set<string>();
+  /** One health import at a time; a failed automatic one is announced once. */
+  private importing = false;
+  private importWarned = false;
 
   async onload(): Promise<void> {
     this.settings = readSettings(await this.loadData());
@@ -94,6 +99,11 @@ export default class SecondBrainPlugin extends Plugin {
           if (this.fresh.has(file.path)) void this.run(() => this.completeNote(file));
         })
       );
+      // Health data: shortly after start, then at the interval of the settings.
+      if (this.healthReady()) {
+        this.registerInterval(window.setTimeout(() => void this.autoImport(), 15000));
+        if (this.settings.healthEvery > 0) this.registerInterval(window.setInterval(() => void this.autoImport(), this.settings.healthEvery * 60000));
+      }
     });
 
     this.addCommand({
@@ -108,6 +118,15 @@ export default class SecondBrainPlugin extends Plugin {
         const file = this.app.workspace.getActiveFile();
         if (!file || file.extension !== "md") return false;
         if (!checking) void this.run(() => this.conformActive(file));
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "health-import",
+      name: "Import health data now",
+      checkCallback: (checking) => {
+        if (!this.healthReady()) return false;
+        if (!checking) void this.run(async () => void new Notice(`Second Brain: ${await this.importHealth(true)}`, 10000));
         return true;
       },
     });
@@ -262,7 +281,7 @@ export default class SecondBrainPlugin extends Plugin {
   private async writeBriefing(vault: Vault, schema: Schema, issues: Issue[], today: string): Promise<void> {
     if (!this.settings.briefingFile) return;
     const log = (await this.readIfExists(this.settings.logFile)) ?? "";
-    await this.writeIfChanged(this.settings.briefingFile, briefing(vault, schema, issues, today, log));
+    await this.writeIfChanged(this.settings.briefingFile, briefing(vault, schema, issues, today, log, await this.importLines()));
   }
 
   private async loadRecall(vault: Vault): Promise<RecallResult[] | null> {
@@ -350,6 +369,12 @@ export default class SecondBrainPlugin extends Plugin {
       (params) => this.conformCli(params)
     );
     cli("templates", "Write note templates and Obsidian property types from the schema", null, () => this.writeTemplates());
+    cli(
+      "health-import",
+      "Read Health Auto Export's folders into the data files (desktop); preview unless apply",
+      { apply: { description: "Write the data files" }, rebuild: { description: "Read every source file again, not only new or changed ones" } },
+      async (params) => this.importHealth(params.apply === "true", params.rebuild === "true")
+    );
   }
 
   private async conformCli(params: CliData): Promise<string> {
@@ -432,6 +457,120 @@ export default class SecondBrainPlugin extends Plugin {
       Object.assign(frontmatter, next);
     });
     return true;
+  }
+
+  private healthReady(): boolean {
+    return Platform.isDesktopApp && healthSources(this.settings.healthSources).length > 0;
+  }
+
+  /** The automatic import: writes, and says so only when it fails, once. */
+  private async autoImport(): Promise<void> {
+    try {
+      await this.importHealth(true);
+      this.importWarned = false;
+    } catch (err) {
+      console.error("[SecondBrain] health import", err);
+      if (!this.importWarned) new Notice(`Second Brain: health import failed: ${err instanceof Error ? err.message : err}`, 10000);
+      this.importWarned = true;
+    }
+  }
+
+  /** Imports every source of the settings; a report of what was read and written. */
+  private async importHealth(apply: boolean, rebuild = false): Promise<string> {
+    if (!Platform.isDesktopApp) throw new Error("the health import works in Obsidian for desktop");
+    const sources = healthSources(this.settings.healthSources);
+    if (!sources.length) throw new Error("no health source in the plugin's settings");
+    if (this.importing) return "a health import is already running";
+    this.importing = true;
+    try {
+      const reports: string[] = [];
+      for (const source of sources) reports.push(await this.importSource(source.folder, source.output, apply, rebuild));
+      return reports.join("\n");
+    } finally {
+      this.importing = false;
+    }
+  }
+
+  /** Files of Health Auto Export in a folder and its subfolders; iCloud placeholders of files not downloaded counted apart. */
+  private async listSource(folder: string): Promise<{ files: (SourceFile & { full: string })[]; placeholders: number }> {
+    // Node's modules exist only on desktop: loaded here, so the plugin still loads on mobile.
+    const fs = require("fs") as typeof import("fs");
+    const path = require("path") as typeof import("path");
+    const files: (SourceFile & { full: string })[] = [];
+    let placeholders = 0;
+    const walk = async (dir: string): Promise<void> => {
+      for (const entry of await fs.promises.readdir(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.name.endsWith(".icloud")) placeholders++;
+        else if (entry.name.startsWith(".")) continue;
+        else if (entry.isDirectory()) await walk(full);
+        else if (entry.name.toLowerCase().endsWith(".json")) {
+          const stat = await fs.promises.stat(full);
+          files.push({ path: path.relative(folder, full).split(path.sep).join("/"), size: stat.size, mtime: Math.round(stat.mtimeMs), full });
+        }
+      }
+    };
+    await walk(folder);
+    return { files, placeholders };
+  }
+
+  private async importSource(sourceFolder: string, output: string, apply: boolean, rebuild: boolean): Promise<string> {
+    const os = require("os") as typeof import("os");
+    const fs = require("fs") as typeof import("fs");
+    const folder = expandHome(sourceFolder, os.homedir());
+    if (!fs.existsSync(folder)) throw new Error(`source folder not found: ${sourceFolder}`);
+    const statePath = `${output}/${FILES.state}`;
+    const state = readState(await this.readIfExists(statePath));
+    const { files, placeholders } = await this.listSource(folder);
+    const toRead = rebuild ? [...files].sort((a, b) => a.mtime - b.mtime) : (changedFiles(files, state) as typeof files);
+    const notDownloaded = placeholders ? `; ${plural(placeholders, "file")} not yet downloaded from iCloud` : "";
+    if (!toRead.length) return `${output}: up to date (${plural(files.length, "source file")}${notDownloaded}).`;
+
+    // What is already in the vault, then the new files on top.
+    const read = (name: string) => this.readIfExists(`${output}/${name}`);
+    const texts = { daily: await read(FILES.daily), workouts: await read(FILES.workouts), splits: await read(FILES.splits), running: await read(FILES.running) };
+    const minutes = new Map<string, string | null>();
+    for (const row of parseJsonl(texts.workouts ?? "")) if (typeof row.id === "string") minutes.set(minutesFile(row), await read(minutesFile(row)));
+    const store = loadStore(texts, (file) => minutes.get(file) ?? null);
+    const counts = newCounts();
+    const unreadable: string[] = [];
+    for (const file of toRead) {
+      try {
+        addExport(store, JSON.parse(await fs.promises.readFile(file.full, "utf8")), counts, file.path);
+      } catch {
+        unreadable.push(file.path);
+      }
+    }
+    derive(store, { maxHr: this.settings.healthMaxHr, sex: this.settings.healthSex });
+
+    const changed: string[] = [];
+    for (const [name, text] of outputFiles(store)) {
+      if ((await read(name)) === text) continue;
+      changed.push(name);
+      if (apply) await this.writeIfChanged(`${output}/${name}`, text);
+    }
+    const summary =
+      `${output}: ${plural(counts.files, "export")} read` +
+      (counts.ignored.length ? `, ${plural(counts.ignored.length, "other JSON file")} left out` : "") +
+      (unreadable.length ? `, ${plural(unreadable.length, "unreadable file")} (${unreadable.slice(0, 3).join(", ")})` : "") +
+      `; ${plural(counts.days.size, "day")}, ${plural(counts.workouts.size, "workout")}, ${plural(counts.running, "running sample")}` +
+      `; ${plural(changed.length, "data file")} ${apply ? "written" : "to write"}${notDownloaded}.`;
+    if (!apply) return [summary, ...changed.slice(0, 12).map((name) => `  ? ${output}/${name}`), changed.length > 12 ? `  … and ${changed.length - 12} more` : "", "Preview: no file written. Run again with apply."].filter(Boolean).join("\n");
+
+    const next: ImportState = { files: { ...state.files }, last: { time: new Date().toISOString(), ok: !unreadable.length, message: summary } };
+    for (const file of toRead) if (!unreadable.includes(file.path)) next.files[file.path] = { size: file.size, mtime: file.mtime };
+    await this.writeIfChanged(statePath, JSON.stringify(next, null, 1) + "\n");
+    return summary;
+  }
+
+  /** The last import of each health source, for the briefing. */
+  private async importLines(): Promise<string[]> {
+    const lines: string[] = [];
+    for (const { output } of healthSources(this.settings.healthSources)) {
+      const last = readState(await this.readIfExists(`${output}/${FILES.state}`)).last;
+      if (last) lines.push(`Health import ${last.time.slice(0, 16).replace("T", " ")} UTC${last.ok ? "" : " (with errors)"}: ${last.message}`);
+    }
+    return lines;
   }
 
   private calendarReady(): boolean {
@@ -555,7 +694,7 @@ class SecondBrainSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     const settings = this.plugin.settings;
     containerEl.empty();
-    const text = (name: string, description: string, key: Exclude<keyof Settings, "ignoredFolders" | "completeNewNotes">) =>
+    const text = (name: string, description: string, key: Exclude<keyof Settings, "ignoredFolders" | "completeNewNotes" | "healthSources" | "healthMaxHr" | "healthSex" | "healthEvery">) =>
       new Setting(containerEl)
         .setName(name)
         .setDesc(description)
@@ -601,6 +740,47 @@ class SecondBrainSettingTab extends PluginSettingTab {
       "Unix socket of the local calendar helper, for the calendar commands (Obsidian for Mac). Empty: no calendar commands.",
       "calendarSocket"
     );
+
+    new Setting(containerEl).setName("Health import").setHeading();
+    new Setting(containerEl)
+      .setName("Sources")
+      .setDesc("Obsidian for desktop. One per line: a folder of Health Auto Export's JSON exports, an arrow, the vault folder for its data. ~ is the home folder.")
+      .addTextArea((input) =>
+        input
+          .setPlaceholder("~/Library/Mobile Documents/iCloud~com~ifunography~HealthExport/Documents -> Data/Health/Jane Doe")
+          .setValue(settings.healthSources.join("\n"))
+          .onChange(async (value) => {
+            settings.healthSources = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+            await this.plugin.saveSettings();
+          })
+      );
+    const number = (name: string, description: string, key: "healthMaxHr" | "healthEvery") =>
+      new Setting(containerEl)
+        .setName(name)
+        .setDesc(description)
+        .addText((input) =>
+          input.setValue(String(settings[key])).onChange(async (value) => {
+            const n = Number(value);
+            if (!Number.isFinite(n) || n < 0) return;
+            settings[key] = n;
+            await this.plugin.saveSettings();
+          })
+        );
+    number("Maximum heart rate", "For the heart-rate zones and the training load. 0: the highest seen in a workout.", "healthMaxHr");
+    new Setting(containerEl)
+      .setName("Sex")
+      .setDesc("For the weighting of the training load (Banister's TRIMP).")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("male", "Male")
+          .addOption("female", "Female")
+          .setValue(settings.healthSex)
+          .onChange(async (value) => {
+            settings.healthSex = value === "female" ? "female" : "male";
+            await this.plugin.saveSettings();
+          })
+      );
+    number("Import every (minutes)", "0: only by command. Takes effect at the next start of Obsidian.", "healthEvery");
   }
 }
 

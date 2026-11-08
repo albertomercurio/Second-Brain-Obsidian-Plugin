@@ -22,6 +22,20 @@ export interface Settings {
   calendarAccount: string;
   /** New notes get the properties and body of their type's template once they have a type. */
   completeNewNotes: boolean;
+  /** Health Auto Export folders and the vault folder of each one's data: "folder -> vault folder" (desktop). */
+  healthSources: string[];
+  /** Maximum heart rate for the zones and the training load; 0: the highest seen in a workout. */
+  healthMaxHr: number;
+  /** Sex, for the weighting of the training load (TRIMP). */
+  healthSex: "male" | "female";
+  /** Minutes between automatic imports; 0: only by command. */
+  healthEvery: number;
+}
+
+/** A source of health data and the vault folder for its data. */
+export interface HealthSource {
+  folder: string;
+  output: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -35,6 +49,10 @@ export const DEFAULT_SETTINGS: Settings = {
   calendarSocket: "",
   calendarAccount: "",
   completeNewNotes: true,
+  healthSources: [],
+  healthMaxHr: 0,
+  healthSex: "male",
+  healthEvery: 60,
 };
 
 /** Saved settings over the defaults, without unknown keys or values of the wrong type. */
@@ -47,11 +65,27 @@ export function readSettings(saved: unknown): Settings {
       if (Array.isArray(value)) settings.ignoredFolders = folderList(value.filter((item) => typeof item === "string").join("\n"));
     } else if (key === "completeNewNotes") {
       if (typeof value === "boolean") settings.completeNewNotes = value;
+    } else if (key === "healthSources") {
+      if (Array.isArray(value)) settings.healthSources = value.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim());
+    } else if (key === "healthMaxHr" || key === "healthEvery") {
+      if (typeof value === "number" && Number.isFinite(value) && value >= 0) settings[key] = value;
+    } else if (key === "healthSex") {
+      if (value === "male" || value === "female") settings.healthSex = value;
     } else if (typeof value === "string") {
       settings[key] = value.trim();
     }
   }
   return settings;
+}
+
+/** The health sources of the settings: "folder -> vault folder", one a line; lines without both are left out. */
+export function healthSources(lines: string[]): HealthSource[] {
+  return lines.flatMap((line) => {
+    const parts = line.split(/\s*(?:->|→)\s*/);
+    if (parts.length !== 2) return [];
+    const [folder, output] = [parts[0].trim(), parts[1].trim().replace(/^\/+|\/+$/g, "")];
+    return folder && output ? [{ folder, output }] : [];
+  });
 }
 
 /** Folders from text, one per line, without slashes at the ends. */
@@ -78,6 +112,10 @@ export function renamedSettings(settings: Settings, oldPath: string, newPath: st
     briefingFile: move(settings.briefingFile),
     logFile: move(settings.logFile),
     recallFile: move(settings.recallFile),
+    healthSources: settings.healthSources.map((line) => {
+      const [source] = healthSources([line]);
+      return source ? `${source.folder} -> ${move(source.output)}` : line;
+    }),
   };
   return JSON.stringify(next) === JSON.stringify(settings) ? null : next;
 }

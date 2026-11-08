@@ -54,7 +54,8 @@ function byProperties(fields: (Field | undefined)[], names: string[]) {
   };
 }
 
-export function briefing(vault: Vault, schema: Schema, issues: Issue[], today: string, log = ""): string {
+/** `imports`: one line for each data import, with its last run (see health.ts). */
+export function briefing(vault: Vault, schema: Schema, issues: Issue[], today: string, log = "", imports: string[] = []): string {
   const rowLine = ({ day, label, note }: Row) => `- ${day} · ${label} · [[${note.name}]]`;
   const counts = countBySeverity(issues);
   const composition = [...schema.types.keys()]
@@ -99,6 +100,7 @@ export function briefing(vault: Vault, schema: Schema, issues: Issue[], today: s
         `- Objects: ${composition || "none"}.`,
         `- Lint: ${plural(counts.error, "error")}, ${plural(counts.warning, "warning")}, ${plural(counts.info, "notice")} (\`obsidian-cli second-brain:lint\`).`,
         ...(schema.freeFolders.length ? [`- To sort in ${schema.freeFolders.join(", ")}: ${toSort}.`] : []),
+        ...imports.map((line) => `- ${line}`),
       ],
       ""
     ),

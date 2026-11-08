@@ -8,6 +8,7 @@ Checks an Obsidian vault against a schema of note types and reads its links as t
 - **Renames**: after a rename in Obsidian, Bases views, the schema and the settings follow.
 - **Briefing**: a one-page starting context for AI agents, kept current.
 - **Calendar** (Obsidian for Mac): add the event a note describes to the calendar, or make a note from an event, through a local helper that holds the calendar permission.
+- **Health import** (Obsidian for desktop): reads the JSON exports of [Health Auto Export](https://www.healthyapps.dev) into JSON Lines files in the vault, ready for charts: days, workouts with their minutes and kilometre splits, running dynamics, heart-rate zones and training load.
 
 Links come from Obsidian's own index, resolved as Obsidian resolves them.
 
@@ -24,6 +25,10 @@ Links come from Obsidian's own index, resolved as Obsidian resolves them.
 | Recall tests file | `Second Brain/recall.yaml` | See below |
 | Complete new notes | on | A note created in Obsidian gets its template once it has a type (see New notes) |
 | Calendar helper socket | none | Unix socket of the calendar helper (see Calendar); `~` is the home folder. Empty: no calendar commands |
+| Health sources | none | One per line: a folder of Health Auto Export's exports, `->`, the vault folder for its data (see Health import) |
+| Maximum heart rate | 0 | For heart-rate zones and training load; 0: the highest seen in a workout |
+| Sex | male | For the weighting of the training load |
+| Import every (minutes) | 60 | Automatic imports while Obsidian is open; 0: only by command |
 
 ## The schema
 
@@ -130,7 +135,7 @@ checks:
 
 ## Commands
 
-In the palette: *Check the vault*, *Conform this note to its template*; on the Mac, with the calendar helper, *Add this event to the calendar*, *New note from a calendar event*, *Open this event in the calendar*.
+In the palette: *Check the vault*, *Conform this note to its template*; on the Mac, with the calendar helper, *Add this event to the calendar*, *New note from a calendar event*, *Open this event in the calendar*; on desktop, with health sources, *Import health data now*.
 
 In Obsidian's command line (Obsidian 1.12.2 or later, app open):
 
@@ -143,6 +148,7 @@ obsidian-cli second-brain:conform [file="Note"] [apply]
 obsidian-cli second-brain:templates
 obsidian-cli second-brain:briefing
 obsidian-cli second-brain:recall
+obsidian-cli second-brain:health-import [apply] [rebuild]
 ```
 
 ## Calendar
@@ -169,6 +175,36 @@ The calendar commands need Obsidian for Mac and a local helper that reads and wr
 
 The helper answers on a Unix socket, one JSON line each way: `{"tool": "…", "arguments": {…}}` → `{"ok": true, "result": …}` or `{"ok": false, "error": "…"}`. The commands use `health` (`accounts`: `role` and, when found, `source`), `list_events` (`from`, `to`, `limit` → `events`), `create_event` (`account`, `title`, `start`, `end`, `all_day`, `location`, `url`) and `update_event` (`id` and the same fields). An event has `id`, `title`, `start` and `end` (ISO 8601 with the computer's offset; for a whole day, YYYY-MM-DD with the last day included), `all_day`, `location`, `account`, `organizer` and `attendees` (`email`, `me`), and `link` (`ical://ekevent/<id>?…`, which macOS Calendar opens). The helper decides what may be written; the plugin only asks.
 
+## Health import
+
+[Health Auto Export](https://www.healthyapps.dev) (iOS) exports Apple Health as JSON, by hand or with automations that write to a folder of iCloud Drive. The plugin reads such a folder, with its subfolders, into a folder of the vault, shortly after Obsidian starts and then at the interval of the settings; `health-import` shows what would change and writes with `apply`. It reads only the files that are new or changed since the last import (`rebuild`: all of them), never deletes a row, and copies only numbers, dates and the sport of each workout: names, sources, notes and GPS routes stay out.
+
+Any export of version 2 will do; what a file holds is read from its content, not from its name:
+
+- **Workouts**: one row each, with their minutes and kilometre splits.
+- **Metrics summarised by day**: one row per day. Metrics the plugin does not know keep the export's name and unit.
+- **Metrics by hour or by minute**: only the running metrics are kept, sample by sample, to give each run its dynamics. An automation of the running metrics by minute gives each run its own values; with hourly metrics they are weighted by overlap, and with daily ones they are used only on days with a single run.
+
+The vault folder gets:
+
+| File | One row per | Fields |
+| --- | --- | --- |
+| `daily.jsonl` | day | `date`; `steps`, `distance_km`, `active_kcal`, `basal_kcal`, `exercise_min`, `stand_min`, `stand_h`, `flights`, `daylight_min`; `rhr_bpm`, `hr_min_bpm`, `hr_avg_bpm`, `hr_max_bpm`, `walking_hr_bpm`, `hrv_sdnn_ms`, `hrv_rmssd_ms`, `respiratory_rate`, `spo2_pct`, `wrist_temp_c`, `vo2max`, `cardio_recovery_bpm`; `sleep_h`, `sleep_deep_h`, `sleep_rem_h`, `sleep_core_h`, `sleep_awake_h`, `sleep_start`, `sleep_end`; `weight_kg`, `body_fat_pct`, `lean_kg`, `bmi`; `walking_speed_kmh`, `walking_step_cm`, `walking_double_support_pct`, `walking_asymmetry_pct`; `run_power_w`, `run_speed_kmh`, `run_vo_cm`, `run_gct_ms`, `run_stride_m`; training load `trimp`, `atl`, `ctl`, `tsb` |
+| `workouts.jsonl` | workout | `id`, `date`, `start`, `end`, `sport` (Apple's activity type: `running`, `walking`, `core_training`…), `indoor`, `duration_min`, `elapsed_min`, `distance_km`, `speed_kmh`, `pace_s_km`, `hr_avg`, `hr_min`, `hr_max`, `active_kcal`, `total_kcal`, `elevation_up_m`, `cadence_spm`, `steps`, `stride_m`, `effort`, `temp_c`, `humidity_pct`, `met`; derived `m_per_beat`, `decoupling_pct`, `trimp`, `z1_min`…`z5_min`, and for runs `run_power_w`, `power_w_kg`, `run_vo_cm`, `run_gct_ms`, `run_stride_m`, `vertical_ratio_pct`, `dynamics_src` |
+| `splits.jsonl` | kilometre of a workout | `id`, `date`, `start`, `sport`, `km`, `distance_m`, `duration_s`, `pace_s_km`, `hr_avg`, `partial` |
+| `running.jsonl` | running sample | `time`, `res` (`minute` or `hour`), `power_w`, `speed_kmh`, `vo_cm`, `gct_ms`, `stride_m` |
+| `Workouts/<date>_<id>.jsonl` | minute of a workout | `t` (minutes from the start), `time`, `hr`, `hr_min`, `hr_max`, `dist_m`, `steps`, `kcal`, `pace_s_km`; for runs with samples by minute `power_w`, `vo_cm`, `gct_ms`, `stride_m` |
+| `sources.json` | — | The source files read, with size and date, and the last import, which goes in the briefing |
+
+Derived fields are computed again at every import from the stored rows:
+
+- `m_per_beat`: metres per heartbeat, distance ÷ (average heart rate × minutes), for running, walking and hiking.
+- `decoupling_pct`: for runs of 20 minutes or more, how much the metres per beat drop from the first half to the second.
+- Zones: minutes in each tenth of the heart-rate reserve from 50 % (Karvonen), with the resting heart rate of the day (or the latest in 30 days).
+- `trimp`: Banister's training impulse, minute by minute.
+- `atl`, `ctl`, `tsb`: fatigue (7-day exponential average of TRIMP), fitness (42 days) and form (yesterday's fitness minus fatigue).
+- `power_w_kg`: running power over the latest weight within 60 days; `vertical_ratio_pct`: vertical oscillation over stride length.
+
 ## Development
 
 ```sh
@@ -178,4 +214,4 @@ npm run typecheck
 npm run build                 # dist/main.js; with VAULT_PLUGIN_DIR=<vault>/.obsidian/plugins/second-brain, also installed there
 ```
 
-`src/` holds the logic and knows nothing of Obsidian: it receives the vault as an index with links already resolved, which `main.ts` builds from Obsidian's metadata cache and the tests from fixtures. The calendar client gets Node's `net` from `main.ts`, which loads it only on the Mac, so the plugin still loads on mobile. A vault is checked inside Obsidian: status bar, *Check the vault*, `obsidian-cli second-brain:lint`. MIT license.
+`src/` holds the logic and knows nothing of Obsidian: it receives the vault as an index with links already resolved, which `main.ts` builds from Obsidian's metadata cache and the tests from fixtures. The calendar client gets Node's `net` from `main.ts`, which loads it only on the Mac, and the health import gets the files from `main.ts` too, which reads them with Node's `fs` only on desktop, so the plugin still loads on mobile. A vault is checked inside Obsidian: status bar, *Check the vault*, `obsidian-cli second-brain:lint`. MIT license.
