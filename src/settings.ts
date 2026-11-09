@@ -1,6 +1,8 @@
 // The plugin's settings: where its files are and which property holds the type
 // of a note. Edited in Obsidian's settings, saved in the plugin's data.json.
 
+import { zoneBounds } from "./health";
+
 export interface Settings {
   /** YAML file with the types of notes and their properties. */
   schemaFile: string;
@@ -28,6 +30,8 @@ export interface Settings {
   healthMaxHr: number;
   /** Sex, for the weighting of the training load (TRIMP). */
   healthSex: "male" | "female";
+  /** Lower bounds (bpm) of heart-rate zones 2–5, as a watch sets them; empty: from the heart-rate reserve. */
+  healthZones: number[];
   /** Minutes between automatic imports; 0: only by command. */
   healthEvery: number;
 }
@@ -52,6 +56,7 @@ export const DEFAULT_SETTINGS: Settings = {
   healthSources: [],
   healthMaxHr: 0,
   healthSex: "male",
+  healthZones: [],
   healthEvery: 60,
 };
 
@@ -71,6 +76,8 @@ export function readSettings(saved: unknown): Settings {
       if (typeof value === "number" && Number.isFinite(value) && value >= 0) settings[key] = value;
     } else if (key === "healthSex") {
       if (value === "male" || value === "female") settings.healthSex = value;
+    } else if (key === "healthZones") {
+      settings.healthZones = zoneBounds(value);
     } else if (typeof value === "string") {
       settings[key] = value.trim();
     }

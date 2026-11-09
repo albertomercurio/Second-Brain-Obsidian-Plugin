@@ -27,6 +27,14 @@ export interface HealthOptions {
   maxHr: number;
   /** Sex, for the weighting of Banister's TRIMP. */
   sex: "male" | "female";
+  /** Lower bounds (bpm) of zones 2 to 5, as a watch sets them; otherwise tenths of the heart-rate reserve. */
+  zones?: number[];
+}
+
+/** Four rising heart rates, the lower bounds of zones 2–5; anything else: none. */
+export function zoneBounds(value: unknown): number[] {
+  const list = (Array.isArray(value) ? value : String(value ?? "").split(/[,;\s]+/)).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  return list.length === 4 && list.every((n, i) => i === 0 || n > list[i - 1]) ? list : [];
 }
 
 export interface SourceFile {
@@ -482,6 +490,7 @@ export function derive(store: Store, options: HealthOptions = DEFAULT_HEALTH): v
   const rests = [...store.daily.values()].map((row) => num(row.rhr_bpm)).filter((v): v is number => v !== null);
   const usualRest = median(rests) ?? 60;
   const k = options.sex === "female" ? 1.67 : 1.92;
+  const bounds = zoneBounds(options.zones);
   const runsByDay = new Map<string, number>();
   for (const w of workouts) if (w.sport === "running") runsByDay.set(String(w.date), (runsByDay.get(String(w.date)) ?? 0) + 1);
   const byMinute = new Map([...store.running.values()].filter((s) => s.res === "minute").map((s) => [String(s.time).slice(0, 16), s]));
@@ -496,26 +505,24 @@ export function derive(store: Store, options: HealthOptions = DEFAULT_HEALTH): v
     const duration = num(w.duration_min);
     if (distance && hrAvg && duration && ON_FOOT.has(String(w.sport))) w.m_per_beat = round((distance * 1000) / (hrAvg * duration), 3);
 
-    // Heart-rate zones (Karvonen, % of reserve) and Banister's TRIMP, minute by minute.
+    // Heart-rate zones and Banister's TRIMP, minute by minute. Zones: the bounds given in bpm, or
+    // tenths of the heart-rate reserve (Karvonen); Z1 is everything below Z2, so the zones add up
+    // to the minutes with a heart rate.
     const rest = latest(store, "rhr_bpm", String(w.date), 30) ?? usualRest;
-    if (maxHr > rest) {
-      const zones = [0, 0, 0, 0, 0];
-      let trimp = 0;
-      for (const m of minutes) {
-        const hr = num(m.hr);
-        if (hr === null) continue;
-        const reserve = Math.min(1, Math.max(0, (hr - rest) / (maxHr - rest)));
-        trimp += reserve * 0.64 * Math.exp(k * reserve);
-        // Tenths of the reserve, with a tolerance: 84/140 is 60 %, not 59.99… %.
-        // Z1 is everything below 60 %: the zones add up to the minutes with a heart rate.
-        const tenth = Math.floor(reserve * 10 + 1e-9);
-        zones[Math.max(0, Math.min(4, tenth - 5))]++;
-      }
-      if (minutes.some((m) => num(m.hr) !== null)) {
-        w.trimp = round(trimp, 1);
-        zones.forEach((count, i) => (w[`z${i + 1}_min`] = count));
-      }
+    const hasHr = minutes.some((m) => num(m.hr) !== null);
+    const zones = [0, 0, 0, 0, 0];
+    let trimp = 0;
+    for (const m of minutes) {
+      const hr = num(m.hr);
+      if (hr === null) continue;
+      const reserve = maxHr > rest ? Math.min(1, Math.max(0, (hr - rest) / (maxHr - rest))) : null;
+      if (reserve !== null) trimp += reserve * 0.64 * Math.exp(k * reserve);
+      if (bounds.length) zones[bounds.filter((bound) => hr >= bound).length]++;
+      // Tenths of the reserve, with a tolerance: 84/140 is 60 %, not 59.99… %.
+      else if (reserve !== null) zones[Math.max(0, Math.min(4, Math.floor(reserve * 10 + 1e-9) - 5))]++;
     }
+    if (hasHr && maxHr > rest) w.trimp = round(trimp, 1);
+    if (hasHr && (bounds.length || maxHr > rest)) zones.forEach((count, i) => (w[`z${i + 1}_min`] = count));
 
     // Aerobic decoupling: speed per heartbeat, first half against second half.
     const paired = minutes.filter((m) => num(m.hr) !== null && num(m.dist_m) !== null);

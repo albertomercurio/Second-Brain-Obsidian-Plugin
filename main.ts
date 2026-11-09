@@ -37,7 +37,7 @@ import { updateSchema, updateSettings, updateView } from "./src/references";
 import { ReportModal } from "./src/ReportModal";
 import { Schema } from "./src/schema";
 import { DEFAULT_SETTINGS, folderList, healthSources, isIgnored, readSettings, renamedSettings, type Settings } from "./src/settings";
-import { addExport, changedFiles, derive, FILES, type ImportState, loadStore, minutesFile, newCounts, outputFiles, parseJsonl, readState, type SourceFile } from "./src/health";
+import { addExport, changedFiles, derive, FILES, type ImportState, loadStore, minutesFile, newCounts, outputFiles, parseJsonl, readState, type SourceFile, zoneBounds } from "./src/health";
 import { completeNew, propertyTypes, templateFiles } from "./src/templates";
 import { addDays, asDate, localDate } from "./src/text";
 import { hasText, type IndexedFile, type IndexedLink, type Note, splitFrontmatter, Vault } from "./src/vault";
@@ -544,7 +544,7 @@ export default class SecondBrainPlugin extends Plugin {
         unreadable.push(file.path);
       }
     }
-    derive(store, { maxHr: this.settings.healthMaxHr, sex: this.settings.healthSex });
+    derive(store, { maxHr: this.settings.healthMaxHr, sex: this.settings.healthSex, zones: this.settings.healthZones });
 
     const changed: string[] = [];
     for (const [name, text] of outputFiles(store)) {
@@ -697,7 +697,7 @@ class SecondBrainSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     const settings = this.plugin.settings;
     containerEl.empty();
-    const text = (name: string, description: string, key: Exclude<keyof Settings, "ignoredFolders" | "completeNewNotes" | "healthSources" | "healthMaxHr" | "healthSex" | "healthEvery">) =>
+    const text = (name: string, description: string, key: Exclude<keyof Settings, "ignoredFolders" | "completeNewNotes" | "healthSources" | "healthMaxHr" | "healthSex" | "healthZones" | "healthEvery">) =>
       new Setting(containerEl)
         .setName(name)
         .setDesc(description)
@@ -782,6 +782,15 @@ class SecondBrainSettingTab extends PluginSettingTab {
             settings.healthSex = value === "female" ? "female" : "male";
             await this.plugin.saveSettings();
           })
+      );
+    new Setting(containerEl)
+      .setName("Heart-rate zones")
+      .setDesc("The lowest heart rate of zones 2, 3, 4 and 5, in bpm, as your watch sets them (e.g. 132, 146, 159, 173). Empty: tenths of the heart-rate reserve, Z2 from 60 %. Applies at the next import with rebuild.")
+      .addText((input) =>
+        input.setValue(settings.healthZones.join(", ")).onChange(async (value) => {
+          settings.healthZones = zoneBounds(value);
+          await this.plugin.saveSettings();
+        })
       );
     number("Import every (minutes)", "0: only by command. Takes effect at the next start of Obsidian.", "healthEvery");
   }

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DEFAULT_SETTINGS, healthSources, readSettings, renamedSettings } from "../src/settings";
-import { addExport, changedFiles, derive, emptyStore, isoTime, loadStore, minutesFile, newCounts, outputFiles, parseJsonl, readState, type Store } from "../src/health";
+import { addExport, changedFiles, derive, emptyStore, isoTime, loadStore, minutesFile, newCounts, outputFiles, parseJsonl, readState, type Store, zoneBounds } from "../src/health";
 
 // Synthetic exports in the format of Health Auto Export (JSON, version 2): no real data.
 
@@ -130,6 +130,13 @@ test("derived: metres per heartbeat, zones, TRIMP, decoupling", () => {
   derive(store, { maxHr: 250, sex: "male" });
   const high = store.workouts.get(UUID)!;
   assert.deepEqual([high.z1_min, high.z2_min, high.z3_min, high.z4_min, high.z5_min], [30, 0, 0, 0, 0]);
+  // Zones from a watch, in bpm: the 30 minutes go from 120 to 149 bpm.
+  const watch = emptyStore();
+  for (const json of [daily("2026-03-02", 8000), { data: { workouts: [run()] } }]) addExport(watch, json, newCounts());
+  derive(watch, { maxHr: 190, sex: "male", zones: zoneBounds("125, 135, 145, 160") });
+  const z = watch.workouts.get(UUID)!;
+  assert.deepEqual([z.z1_min, z.z2_min, z.z3_min, z.z4_min, z.z5_min], [5, 10, 10, 5, 0]);
+  assert.deepEqual([zoneBounds("132, 146, 159, 173"), zoneBounds([132, 146]), zoneBounds("150, 140, 160, 170")], [[132, 146, 159, 173], [], []]);
   assert.ok(Number(w.trimp) > 30 && Number(w.trimp) < 50, String(w.trimp));
   // Same speed, rising heart rate: the second half covers fewer metres per beat.
   assert.ok(Number(w.decoupling_pct) > 5, String(w.decoupling_pct));

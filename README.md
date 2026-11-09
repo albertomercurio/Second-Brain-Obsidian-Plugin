@@ -27,6 +27,7 @@ Links come from Obsidian's own index, resolved as Obsidian resolves them.
 | Calendar helper socket | none | Unix socket of the calendar helper (see Calendar); `~` is the home folder. Empty: no calendar commands |
 | Health sources | none | One per line: a folder of Health Auto Export's exports, `->`, the vault folder for its data (see Health import) |
 | Maximum heart rate | 0 | For heart-rate zones and training load; 0: the highest seen in a workout |
+| Heart-rate zones | empty | The lowest heart rate of zones 2–5 in bpm, as a watch sets them (`132, 146, 159, 173`); empty: tenths of the heart-rate reserve |
 | Sex | male | For the weighting of the training load |
 | Import every (minutes) | 60 | Automatic imports while Obsidian is open; 0: only by command |
 
@@ -200,7 +201,7 @@ Derived fields are computed again at every import from the stored rows:
 
 - `m_per_beat`: metres per heartbeat, distance ÷ (average heart rate × minutes), for running, walking and hiking.
 - `decoupling_pct`: for runs of 20 minutes or more, how much the metres per beat drop from the first half to the second.
-- Zones: minutes by heart-rate reserve (Karvonen), with the resting heart rate of the day (or the latest in 30 days): Z1 below 60 %, Z2 60–70 %, Z3 70–80 %, Z4 80–90 %, Z5 from 90 %. The zones add up to the minutes with a heart rate.
+- Zones: minutes by the average heart rate of each minute. With the zones of the settings, Z2–Z5 start at the bpm given; without, they follow the heart-rate reserve (Karvonen), with the resting heart rate of the day (or the latest in 30 days): Z1 below 60 %, Z2 60–70 %, Z3 70–80 %, Z4 80–90 %, Z5 from 90 %. Z1 is everything below Z2, so the zones add up to the minutes with a heart rate.
 - `trimp`: Banister's training impulse, minute by minute.
 - `atl`, `ctl`, `tsb`: fatigue (7-day exponential average of TRIMP), fitness (42 days) and form (yesterday's fitness minus fatigue).
 - `power_w_kg`: running power over the latest weight within 60 days; `vertical_ratio_pct`: vertical oscillation over stride length.
