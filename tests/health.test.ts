@@ -124,6 +124,12 @@ test("derived: metres per heartbeat, zones, TRIMP, decoupling", () => {
   assert.equal(w.m_per_beat, round3(6000 / (134.5 * 30)));
   // Rest 50, max 190: 120–149 bpm is 50–71 % of the reserve.
   assert.deepEqual([w.z1_min, w.z2_min, w.z3_min, w.z4_min, w.z5_min], [14, 14, 2, 0, 0]);
+  // With a higher maximum, the minutes below 50 % fall in Z1 too: the zones add up to the 30 minutes.
+  const store = emptyStore();
+  for (const json of [daily("2026-03-02", 8000), { data: { workouts: [run()] } }]) addExport(store, json, newCounts());
+  derive(store, { maxHr: 250, sex: "male" });
+  const high = store.workouts.get(UUID)!;
+  assert.deepEqual([high.z1_min, high.z2_min, high.z3_min, high.z4_min, high.z5_min], [30, 0, 0, 0, 0]);
   assert.ok(Number(w.trimp) > 30 && Number(w.trimp) < 50, String(w.trimp));
   // Same speed, rising heart rate: the second half covers fewer metres per beat.
   assert.ok(Number(w.decoupling_pct) > 5, String(w.decoupling_pct));

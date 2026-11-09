@@ -507,8 +507,9 @@ export function derive(store: Store, options: HealthOptions = DEFAULT_HEALTH): v
         const reserve = Math.min(1, Math.max(0, (hr - rest) / (maxHr - rest)));
         trimp += reserve * 0.64 * Math.exp(k * reserve);
         // Tenths of the reserve, with a tolerance: 84/140 is 60 %, not 59.99… %.
+        // Z1 is everything below 60 %: the zones add up to the minutes with a heart rate.
         const tenth = Math.floor(reserve * 10 + 1e-9);
-        if (tenth >= 5) zones[Math.min(4, tenth - 5)]++;
+        zones[Math.max(0, Math.min(4, tenth - 5))]++;
       }
       if (minutes.some((m) => num(m.hr) !== null)) {
         w.trimp = round(trimp, 1);

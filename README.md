@@ -200,7 +200,7 @@ Derived fields are computed again at every import from the stored rows:
 
 - `m_per_beat`: metres per heartbeat, distance ÷ (average heart rate × minutes), for running, walking and hiking.
 - `decoupling_pct`: for runs of 20 minutes or more, how much the metres per beat drop from the first half to the second.
-- Zones: minutes in each tenth of the heart-rate reserve from 50 % (Karvonen), with the resting heart rate of the day (or the latest in 30 days).
+- Zones: minutes by heart-rate reserve (Karvonen), with the resting heart rate of the day (or the latest in 30 days): Z1 below 60 %, Z2 60–70 %, Z3 70–80 %, Z4 80–90 %, Z5 from 90 %. The zones add up to the minutes with a heart rate.
 - `trimp`: Banister's training impulse, minute by minute.
 - `atl`, `ctl`, `tsb`: fatigue (7-day exponential average of TRIMP), fitness (42 days) and form (yesterday's fitness minus fatigue).
 - `power_w_kg`: running power over the latest weight within 60 days; `vertical_ratio_pct`: vertical oscillation over stride length.
