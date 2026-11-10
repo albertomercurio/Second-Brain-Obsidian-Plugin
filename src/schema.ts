@@ -43,6 +43,8 @@ export interface TypeSpec {
   closed: Condition | null;
   /** Days after which an open note nobody modified is reported. */
   staleAfter: number | null;
+  /** Days after which a closed note nobody modified is removed by the cleanup. */
+  pruneAfter: number | null;
   /** A note nobody links to is reported. */
   expectBacklinks: boolean;
   /** Properties with the given and family name: similar names are possible duplicates. */
@@ -134,6 +136,7 @@ export class Schema {
         open: readCondition(spec.open),
         closed: readCondition(spec.closed),
         staleAfter: typeof spec.stale_after === "number" ? spec.stale_after : null,
+        pruneAfter: typeof spec.prune_after === "number" ? spec.prune_after : null,
         expectBacklinks: spec.expect_backlinks === true,
         personName: personName.length === 2 ? [personName[0], personName[1]] : null,
         briefing: strings(spec.briefing),

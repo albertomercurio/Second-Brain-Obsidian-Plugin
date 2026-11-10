@@ -6,6 +6,7 @@ Checks an Obsidian vault against a schema of note types and reads its links as t
 - **Typed relations**: a link in the property `Collaborators` is a `Collaborators` relation, and the reverse one is computed, never written. `links` groups a note's links by relation, `path` finds the shortest chain between two notes, `neighbors` lists the notes within N steps.
 - **Templates**: note templates and Obsidian property types are generated from the schema; a new note gets its template as soon as it has a type, wherever it is; `conform` gives a note the properties of its template, in order.
 - **Renames**: after a rename in Obsidian, Bases views, the schema and the settings follow.
+- **Cleanup**: `prune` removes closed notes nobody has modified for a while, such as old tasks done; where they are cited, the links become text.
 - **Briefing**: a one-page starting context for AI agents, kept current.
 - **Calendar** (Obsidian for Mac): add the event a note describes to the calendar, or make a note from an event, through a local helper that holds the calendar permission.
 - **Health import** (Obsidian for desktop): reads the JSON exports of [Health Auto Export](https://www.healthyapps.dev) into JSON Lines files in the vault, ready for charts: days, workouts with their minutes and kilometre splits, running dynamics, heart-rate zones and training load.
@@ -21,7 +22,7 @@ Links come from Obsidian's own index, resolved as Obsidian resolves them.
 | Ignored folders | none | Left out of checks, links and counts, one per line |
 | Templates folder | `Second Brain/Templates` | Written by `templates`; always ignored |
 | Briefing file | `Second Brain/briefing.md` | Rewritten after every change; always ignored. Empty: no briefing |
-| Log file | `Second Brain/log.md` | `conform` adds an entry `## [YYYY-MM-DD] conform \| …`; the latest five go in the briefing |
+| Log file | `Second Brain/log.md` | `conform` and `prune` add an entry `## [YYYY-MM-DD] conform \| …`; the latest five go in the briefing |
 | Recall tests file | `Second Brain/recall.yaml` | See below |
 | Complete new notes | on | A note created in Obsidian gets its template once it has a type (see New notes) |
 | Calendar helper socket | none | Unix socket of the calendar helper (see Calendar); `~` is the home folder. Empty: no calendar commands |
@@ -70,6 +71,7 @@ types:
   Task:
     folder: Notes/Tasks
     closed: {done: true}            # out of the agenda, never overdue
+    prune_after: 90                 # prune removes tasks done and not modified for 90 days
     briefing: [priority, due]       # open tasks listed in the briefing, sorted by these
     fields:
       done: {kind: bool}
@@ -93,7 +95,7 @@ types:
 
 **Field kinds**: `string`, `text`, `int`, `number`, `bool` (checkbox), `date` (YYYY-MM-DD), `datetime` (YYYY-MM-DD or YYYY-MM-DDTHH:mm; Obsidian's date and time), `url`, `doi`, `orcid`, `enum` (with `values`), `link` (`"[[Note]]"`, with the allowed types in `target`), and `list[…]` of any of them. A field can be written as just its kind: `title: string`.
 
-**Rules of a type**: `open` and `closed` are conditions, property → value or list of values; a note matches when any of the properties has one of the values. `agenda` puts a date in the briefing's next 30 days, with the label given (`true`: the property's name). `calendar` names the properties of the calendar commands (see Calendar). `name_date` names a date property whose day ends every note's name, in parentheses: `Meeting with Ada (2026-11-10)`; titles repeat, the day keeps names unique.
+**Rules of a type**: `open` and `closed` are conditions, property → value or list of values; a note matches when any of the properties has one of the values. `agenda` puts a date in the briefing's next 30 days, with the label given (`true`: the property's name). `calendar` names the properties of the calendar commands (see Calendar). `stale_after` and `prune_after` count days from the last modification of the file, which never comes before a note was closed: the count can start late, never early. `name_date` names a date property whose day ends every note's name, in parentheses: `Meeting with Ada (2026-11-10)`; titles repeat, the day keeps names unique.
 
 **Codes**. Problems that follow a rule of the schema start with the type in lowercase with dashes: `person-duplicate`, `task-overdue`, `project-stale`, `event-name-date`. The others: `yaml-invalid`, `type-missing`, `type-unknown`, `folder-mismatch`, `field-required`, `field-unknown`, `field-kind`, `field-for-kind`, `datetime-midnight` (00:00, which Obsidian's date-and-time field writes when only the day is edited), `date-order`, `link-broken`, `link-unquoted`, `link-ambiguous`, `link-target-type`, `name-duplicate`, `alias-collision`, `isolated`, `no-backlinks`, `injection-suspect`, `templater-command`, `filename-chars`, `file-large`, `file-too-large`, `base-link-broken`, `base-folder-broken`, `schema-missing`, `schema-invalid`, `property-type-conflict` (a property with kinds that Obsidian shows differently in two types: Obsidian keeps one type per name, so `.obsidian/types.json` would be wrong for one of them).
 
@@ -146,11 +148,16 @@ obsidian-cli second-brain:links file="Note" [format=json]
 obsidian-cli second-brain:path from="A" to="B" [all]
 obsidian-cli second-brain:neighbors file="Note" [depth=2]
 obsidian-cli second-brain:conform [file="Note"] [apply]
+obsidian-cli second-brain:prune [file="Note"] [apply]
 obsidian-cli second-brain:templates
 obsidian-cli second-brain:briefing
 obsidian-cli second-brain:recall
 obsidian-cli second-brain:health-import [apply] [rebuild]
 ```
+
+### Cleanup
+
+`prune` lists the closed notes of the types with `prune_after` that nobody has modified for that many days, and with `apply` removes them, to the trash that Obsidian's settings name (*Files and links → Deleted files*), then adds an entry to the log. Where a removed note is cited, a link in the body becomes its text followed by ✓ (`- [[Send the code]]` → `- Send the code ✓`), and a link in a property is taken out of it. A note with text of its own (a line that is not blank, a heading or a line of its type's `body`) is listed apart, to decide: move what matters to another note, then remove it with `file="Note" apply`, which removes a closed note now, whatever its age and text. The preview also names the attachments that would be left without links. The briefing counts the notes to prune.
 
 ## Calendar
 

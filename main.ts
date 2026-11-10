@@ -34,6 +34,7 @@ import { callHelper, expandHome } from "./src/helper";
 import { countBySeverity, type Issue, lint } from "./src/lint";
 import { type RecallResult, runRecall } from "./src/recall";
 import { updateSchema, updateSettings, updateView } from "./src/references";
+import { type PrunePlan, prunePlan, pruneReport, unlinkBody, unlinkProperty } from "./src/prune";
 import { ReportModal } from "./src/ReportModal";
 import { Schema } from "./src/schema";
 import { DEFAULT_SETTINGS, folderList, healthSources, isIgnored, readSettings, renamedSettings, type Settings } from "./src/settings";
@@ -371,6 +372,16 @@ export default class SecondBrainPlugin extends Plugin {
       },
       (params) => this.conformCli(params)
     );
+    cli(
+      "prune",
+      "Remove closed notes not modified for their type's prune_after days; preview unless apply",
+      {
+        file: { value: "<name>", description: "Only this closed note, now, even with text of its own" },
+        path: { value: "<path>", description: "Only the closed note at this path" },
+        apply: { description: "Remove the notes and make their links text" },
+      },
+      (params) => this.pruneCli(params)
+    );
     cli("templates", "Write note templates and Obsidian property types from the schema", null, () => this.writeTemplates());
     cli(
       "health-import",
@@ -403,6 +414,39 @@ export default class SecondBrainPlugin extends Plugin {
       lines.push("Preview: no file written. Run again with apply.");
     }
     return lines.join("\n");
+  }
+
+  private async pruneCli(params: CliData): Promise<string> {
+    const [vault, schema] = await Promise.all([this.loadVault(), this.requireSchema()]);
+    const query = params.path ?? params.file;
+    const apply = params.apply === "true";
+    const plan = prunePlan(vault, schema, localDate(), query ? vault.get(query) : undefined);
+    if (apply && plan.remove.length) await this.prune(plan);
+    return pruneReport(plan, apply, Boolean(query));
+  }
+
+  /** Links to the removed notes made text, then the notes to the trash Obsidian's settings name, then a log entry. */
+  private async prune(plan: PrunePlan): Promise<void> {
+    const { vault, fileManager } = this.app;
+    for (const { note, citations } of plan.remove) {
+      for (const source of new Set(citations.map((citation) => citation.source))) {
+        const file = vault.getFileByPath(source);
+        if (!file) continue;
+        const own = citations.filter((citation) => citation.source === source);
+        if (own.some((citation) => citation.field === null)) await vault.process(file, (text) => unlinkBody(text, own, note.name));
+        const fields = own.filter((citation) => citation.field !== null);
+        if (fields.length) await fileManager.processFrontMatter(file, (frontmatter) => fields.forEach((c) => unlinkProperty(frontmatter, c.field!, c.original)));
+      }
+    }
+    for (const { note } of plan.remove) {
+      const file = vault.getFileByPath(note.path);
+      if (file) await fileManager.trashFile(file);
+    }
+    const lines = plan.remove.map(({ note, citations }) => {
+      const sources = [...new Set(citations.map((citation) => citation.source))];
+      return `- ${note.path}${sources.length ? ` (unlinked in ${sources.join(", ")})` : ""}\n`;
+    });
+    await this.appendLog([`\n## [${localDate()}] prune | ${plural(plan.remove.length, "closed note")} removed\n`, ...lines].join(""));
   }
 
   private async writeTemplates(): Promise<string> {

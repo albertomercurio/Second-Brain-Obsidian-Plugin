@@ -72,6 +72,8 @@ export interface Link {
   resolved: string | null;
   /** Files with the same name, when there is more than one. */
   candidates: string[];
+  /** The link as written, e.g. "[[Note|text]]". */
+  original: string;
 }
 
 /** A wikilink written without quotes in the YAML: a list inside a list, not a link. */
@@ -195,6 +197,7 @@ export class Vault {
       line: link.line ?? (link.key === undefined ? 1 : frontmatterLine(raw, (line) => line.includes(link.original))),
       resolved: link.resolved === null ? null : nfc(link.resolved),
       candidates: link.resolved === null ? [] : this.sameName(link.target),
+      original: link.original,
     }));
     for (const [field, value] of Object.entries(meta)) {
       for (const target of unquoted(value)) {

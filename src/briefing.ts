@@ -4,6 +4,7 @@
 
 import { plural } from "./commands";
 import { countBySeverity, type Issue } from "./lint";
+import { pruneLine } from "./prune";
 import { type Field, isEmpty, type Schema } from "./schema";
 import { addDays, asDate, compare } from "./text";
 import type { Note, Vault } from "./vault";
@@ -65,6 +66,7 @@ export function briefing(vault: Vault, schema: Schema, issues: Issue[], today: s
     .join(", ");
   const toSort = [...vault.notes.keys()].filter((path) => schema.inFreeFolder(path)).length;
   const { next, overdue } = agenda(vault, schema, today);
+  const prune = pruneLine(vault, schema, today);
 
   const lists = [...schema.types.values()]
     .filter((spec) => spec.briefing.length)
@@ -100,6 +102,7 @@ export function briefing(vault: Vault, schema: Schema, issues: Issue[], today: s
         `- Objects: ${composition || "none"}.`,
         `- Lint: ${plural(counts.error, "error")}, ${plural(counts.warning, "warning")}, ${plural(counts.info, "notice")} (\`obsidian-cli second-brain:lint\`).`,
         ...(schema.freeFolders.length ? [`- To sort in ${schema.freeFolders.join(", ")}: ${toSort}.`] : []),
+        ...(prune ? [`- ${prune}`] : []),
         ...imports.map((line) => `- ${line}`),
       ],
       ""

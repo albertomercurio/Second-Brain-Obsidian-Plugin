@@ -327,6 +327,7 @@ types:
     description: A concrete action.
     template: [Done, Assignees, Priority, Due Date, Projects]
     closed: {Done: true}
+    prune_after: 90
     briefing: [Priority, Due Date]
     fields:
       Done: {kind: bool}
