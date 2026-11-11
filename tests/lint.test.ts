@@ -90,6 +90,20 @@ test("a typed note with no links in either direction is isolated", () => {
   assert.deepEqual(isolated, ["Notes/Ideas/Alone.md"]);
 });
 
+test("a file in an attachment folder that no note links or embeds is unlinked", () => {
+  const rules = new Schema(parse("attachment_folders: [Files]\ntypes: {}"), "Type");
+  const vault = vaultOf({
+    "Notes/Paper.md": note('Type: Article\nPDF:\n  - "[[paper.pdf]]"', "![[figure.png]]"),
+    "Files/paper.pdf": "",
+    "Files/figure.png": "",
+    "Files/Inbox/forgotten.png": "",
+    "Data/daily.jsonl": "",
+  });
+  const unlinked = lint(vault, rules, "2026-11-11").filter((issue) => issue.code === "file-unlinked").map((issue) => issue.path);
+  assert.deepEqual(unlinked, ["Files/Inbox/forgotten.png"]);
+  assert.deepEqual(lint(vault, schema, "2026-11-11").filter((issue) => issue.code === "file-unlinked"), [], "without attachment folders, no check");
+});
+
 test("duplicates: shared identifiers are errors, similar titles and names warnings", () => {
   const rules = new Schema(
     parse(`
