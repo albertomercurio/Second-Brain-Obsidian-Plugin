@@ -90,6 +90,17 @@ test("a typed note with no links in either direction is isolated", () => {
   assert.deepEqual(isolated, ["Notes/Ideas/Alone.md"]);
 });
 
+test("a recommended property left empty is a warning", () => {
+  const rules = new Schema(parse("types:\n  Article:\n    recommended: [PDF]\n    fields:\n      PDF: {kind: \"list[link]\"}"), "Type");
+  const vault = vaultOf({
+    "Notes/With.md": note('Type: Article\nPDF:\n  - "[[with.pdf]]"'),
+    "Notes/Without.md": note("Type: Article\nPDF:"),
+    "Files/with.pdf": "",
+  });
+  const issues = lint(vault, rules, "2026-11-11").filter((issue) => issue.code === "field-recommended");
+  assert.deepEqual(issues.map((issue) => [issue.severity, issue.path, issue.message]), [["warning", "Notes/Without.md", "PDF is empty"]]);
+});
+
 test("a file in an attachment folder that no note links or embeds is unlinked", () => {
   const rules = new Schema(parse("attachment_folders: [Files]\ntypes: {}"), "Type");
   const vault = vaultOf({

@@ -33,6 +33,8 @@ export interface TypeSpec {
   name: string;
   folder: string;
   required: string[];
+  /** Properties that should be filled; an empty one is a warning, not an error. */
+  recommended: string[];
   template: string[];
   kindTemplates: Record<string, string[]>;
   fields: Map<string, Field>;
@@ -132,6 +134,7 @@ export class Schema {
         name,
         folder: spec.folder ?? "",
         required: strings(spec.required),
+        recommended: strings(spec.recommended),
         template: strings(spec.template),
         kindTemplates: spec.kind_templates ?? {},
         fields: readFields(spec.fields),
