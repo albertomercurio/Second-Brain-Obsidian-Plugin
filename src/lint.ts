@@ -63,6 +63,7 @@ export function lint(vault: Vault, schema: Schema, today: string): Issue[] {
   checkDuplicates(vault, schema, add);
   checkGraph(vault, schema, add);
   checkFiles(vault, add);
+  checkAttachments(vault, schema, add);
   checkBaseReferences(vault, schema, add);
 
   return issues.sort(
@@ -330,6 +331,14 @@ function checkFiles(vault: Vault, add: Add): void {
     const megabytes = Math.floor(size / MB);
     if (size > MAX_FILE) add("error", "file-too-large", path, 1, `${megabytes} MB: over GitHub's limit (100 MB)`);
     else if (size > LARGE_FILE) add("warning", "file-large", path, 1, `${megabytes} MB: consider a separate archive`);
+  }
+}
+
+/** Files in the attachment folders that no note links or embeds: forgotten, or left by a note gone. */
+function checkAttachments(vault: Vault, schema: Schema, add: Add): void {
+  for (const { path } of vault.files) {
+    if (!schema.inAttachmentFolder(path) || vault.notes.has(path) || vault.backlinks.has(path)) continue;
+    add("warning", "file-unlinked", path, 1, "no note links this file", "link it from the note it belongs to, or move it to the trash");
   }
 }
 

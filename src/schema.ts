@@ -110,6 +110,8 @@ export class Schema {
   readonly types = new Map<string, TypeSpec>();
   readonly contentFolders: string[];
   readonly freeFolders: string[];
+  /** Folders of attachments: every file inside should be linked by a note. */
+  readonly attachmentFolders: string[];
   /** Property whose values select a kind template and the fields reserved to a kind. */
   readonly kindProperty: string | null;
   private commonFields: Map<string, Field>;
@@ -119,6 +121,7 @@ export class Schema {
     data = data && typeof data === "object" ? data : {};
     this.contentFolders = strings(data.content_folders);
     this.freeFolders = strings(data.free_folders);
+    this.attachmentFolders = strings(data.attachment_folders);
     this.kindProperty = typeof data.kind_property === "string" ? data.kind_property : null;
     this.commonFields = readFields(data.common?.fields);
     this.commonRequired = strings(data.common?.required);
@@ -191,6 +194,10 @@ export class Schema {
 
   inFreeFolder(path: string): boolean {
     return this.freeFolders.some((folder) => path.startsWith(`${folder}/`));
+  }
+
+  inAttachmentFolder(path: string): boolean {
+    return this.attachmentFolders.some((folder) => path.startsWith(`${folder}/`));
   }
 
   /** The kind of a note, when the schema names a kind property. */
