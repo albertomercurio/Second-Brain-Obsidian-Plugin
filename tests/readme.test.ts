@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
+import { parseExternalIssues } from "../src/external";
 import { lint } from "../src/lint";
 import { runRecall } from "../src/recall";
 import { Schema } from "../src/schema";
@@ -10,7 +11,9 @@ import { DEFAULT_SETTINGS } from "../src/settings";
 import { Vault } from "../src/vault";
 import { indexOf, note } from "./helpers";
 
-const [schemaYaml, recallYaml] = [...readFileSync("README.md", "utf8").matchAll(/```yaml\n([\s\S]*?)```/g)].map((m) => m[1]);
+const readme = readFileSync("README.md", "utf8");
+const [schemaYaml, recallYaml] = [...readme.matchAll(/```yaml\n([\s\S]*?)```/g)].map((m) => m[1]);
+const [externalJson] = [...readme.matchAll(/```json\n([\s\S]*?)```/g)].map((m) => m[1]);
 const schema = new Schema(parse(schemaYaml), DEFAULT_SETTINGS.typeProperty);
 const vaultOf = (files: Record<string, string>) => new Vault(indexOf(files), { typeProperty: DEFAULT_SETTINGS.typeProperty, parseYaml: parse });
 
@@ -44,4 +47,11 @@ test("the recall tests of the README", () => {
     "Notes/Sketch of the Analytical Engine.md": note('type: Paper\nauthors:\n  - "[[Ada Lovelace]]"\ntopics:\n  - "[[Engines]]"'),
   });
   assert.deepEqual(runRecall(vault, parse(recallYaml)).map((result) => result.ok), [true, true, true, true]);
+});
+
+test("the external check of the README", () => {
+  assert.deepEqual(
+    parseExternalIssues(externalJson).map((issue) => `${issue.severity} ${issue.code} ${issue.path}:${issue.line}`),
+    ["error icloud-conflict Notes/Ada Lovelace.md:1"]
+  );
 });
