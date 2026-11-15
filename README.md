@@ -52,6 +52,7 @@ types:
     folder: Notes/People            # notes of the type belong here
     template: [given, family, orcid, affiliations]   # properties of every note, in order
     required: [family]
+    recommended: [orcid]            # empty: a warning, not an error
     person_name: [given, family]    # "A. Lovelace" and "Ada Lovelace" may be the same person
     expect_backlinks: true          # report a person no note links to
     fields:
@@ -98,7 +99,7 @@ types:
 
 **Rules of a type**: `open` and `closed` are conditions, property → value or list of values; a note matches when any of the properties has one of the values. `agenda` puts a date in the briefing's next 30 days, with the label given (`true`: the property's name). `calendar` names the properties of the calendar commands (see Calendar). `stale_after` and `prune_after` count days from the last modification of the file, which never comes before a note was closed: the count can start late, never early. `name_date` names a date property whose day ends every note's name, in parentheses: `Meeting with Ada (2026-11-10)`; titles repeat, the day keeps names unique.
 
-**Codes**. Problems that follow a rule of the schema start with the type in lowercase with dashes: `person-duplicate`, `task-overdue`, `project-stale`, `event-name-date`. The others: `yaml-invalid`, `type-missing`, `type-unknown`, `folder-mismatch`, `field-required`, `field-unknown`, `field-kind`, `field-for-kind`, `datetime-midnight` (00:00, which Obsidian's date-and-time field writes when only the day is edited), `date-order`, `link-broken`, `link-unquoted`, `link-ambiguous`, `link-target-type`, `name-duplicate`, `alias-collision`, `isolated`, `no-backlinks`, `file-unlinked` (a file in an attachment folder that no note links or embeds), `injection-suspect`, `templater-command`, `filename-chars`, `file-large`, `file-too-large`, `base-link-broken`, `base-folder-broken`, `schema-missing`, `schema-invalid`, `property-type-conflict` (a property with kinds that Obsidian shows differently in two types: Obsidian keeps one type per name, so `.obsidian/types.json` would be wrong for one of them).
+**Codes**. Problems that follow a rule of the schema start with the type in lowercase with dashes: `person-duplicate`, `task-overdue`, `project-stale`, `event-name-date`. The others: `yaml-invalid`, `type-missing`, `type-unknown`, `folder-mismatch`, `field-required`, `field-recommended` (a property of `recommended` left empty), `field-unknown`, `field-kind`, `field-for-kind`, `datetime-midnight` (00:00, which Obsidian's date-and-time field writes when only the day is edited), `date-order`, `link-broken`, `link-unquoted`, `link-ambiguous`, `link-target-type`, `name-duplicate`, `alias-collision`, `isolated`, `no-backlinks`, `file-unlinked` (a file in an attachment folder that no note links or embeds), `injection-suspect`, `templater-command`, `filename-chars`, `file-large`, `file-too-large`, `base-link-broken`, `base-folder-broken`, `schema-missing`, `schema-invalid`, `property-type-conflict` (a property with kinds that Obsidian shows differently in two types: Obsidian keeps one type per name, so `.obsidian/types.json` would be wrong for one of them).
 
 ## New notes
 

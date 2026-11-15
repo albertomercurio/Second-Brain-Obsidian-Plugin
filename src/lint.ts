@@ -116,6 +116,9 @@ function checkFrontmatter(note: Note, schema: Schema, today: string, add: Add): 
   for (const name of schema.requiredFor(note.type)) {
     if (isEmpty(note.meta[name])) add("error", "field-required", note.path, 1, `required property missing: ${name}`);
   }
+  for (const name of spec.recommended) {
+    if (isEmpty(note.meta[name])) add("warning", "field-recommended", note.path, 1, `${name} is empty`, "fill it when there is one");
+  }
   const fieldNames = [...fields.keys()];
   const kind = schema.kindOf(note.meta);
   for (const [name, value] of Object.entries(note.meta)) {
