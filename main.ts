@@ -4,7 +4,8 @@
 // redone after every change. The logic is in src/, which knows nothing of
 // Obsidian: this file gives it the vault as Obsidian indexes it. On the Mac,
 // the calendar commands talk to a local helper that holds the calendar permission.
-// On desktop, the health import reads Health Auto Export's folders into data files.
+// On desktop, the health import reads Health Auto Export's folders into data files,
+// the external checks of the settings join the lint, and the briefing is written.
 
 import {
   App,
@@ -12,6 +13,7 @@ import {
   type CliData,
   type CliFlags,
   debounce,
+  FileSystemAdapter,
   getLinkpath,
   Modal,
   Notice,
@@ -31,7 +33,8 @@ import { briefing } from "./src/briefing";
 import { type CalendarEvent, type CalendarSpec, calendarSpec, type Draft, draftFromNote, eventId, eventPath, noteFromEvent, peopleByEmail } from "./src/calendar";
 import { lintReport, linksReport, neighboursReport, pathReport, plural, recallReport } from "./src/commands";
 import { callHelper, expandHome } from "./src/helper";
-import { countBySeverity, type Issue, lint } from "./src/lint";
+import { externalFailure, parseExternalIssues } from "./src/external";
+import { countBySeverity, type Issue, lint, sortIssues } from "./src/lint";
 import { type RecallResult, runRecall } from "./src/recall";
 import { updateSchema, updateSettings, updateView } from "./src/references";
 import { type PrunePlan, prunePlan, pruneReport, unlinkBody, unlinkProperty } from "./src/prune";
@@ -251,7 +254,7 @@ export default class SecondBrainPlugin extends Plugin {
   private async check(): Promise<{ vault: Vault; schema: Schema; issues: Issue[]; hasSchema: boolean; today: string }> {
     const [vault, { schema, problem }] = await Promise.all([this.loadVault(), this.loadSchema()]);
     const today = localDate();
-    const issues = lint(vault, schema, today);
+    const issues = sortIssues([...lint(vault, schema, today), ...(await this.externalIssues())]);
     for (const message of schema.typeConflicts()) {
       issues.unshift({ severity: "error", code: "property-type-conflict", path: this.settings.schemaFile, line: 1, message, hint: "Obsidian keeps one type per property name: give it the same kind in every type, or another name" });
     }
@@ -293,12 +296,33 @@ export default class SecondBrainPlugin extends Plugin {
     return text === null ? null : runRecall(vault, parseYaml(text));
   }
 
-  /** The status bar shows the lint; the briefing for agents stays current. */
+  /** The problems printed by the external checks of the settings, on desktop; a command that fails is a warning. */
+  private async externalIssues(): Promise<Issue[]> {
+    const commands = this.settings.externalChecks;
+    const adapter = this.app.vault.adapter;
+    if (!Platform.isDesktopApp || commands.length === 0 || !(adapter instanceof FileSystemAdapter)) return [];
+    const { exec } = require("child_process") as typeof import("child_process");
+    const run = (command: string) =>
+      new Promise<Issue[]>((resolve) => {
+        exec(command, { cwd: adapter.getBasePath(), timeout: 60_000, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
+          if (error) return resolve([externalFailure(command, String(stderr) || error.message)]);
+          try {
+            resolve(parseExternalIssues(String(stdout)));
+          } catch (err) {
+            resolve([externalFailure(command, err instanceof Error ? err.message : String(err))]);
+          }
+        });
+      });
+    return (await Promise.all(commands.map(run))).flat();
+  }
+
+  /** The status bar shows the lint; the briefing for agents stays current, written on desktop only:
+   *  with a phone writing it too, a sync service would get two versions of it after every change. */
   private async refreshState(): Promise<void> {
     const { vault, schema, issues, hasSchema, today } = await this.check();
     const counts = countBySeverity(issues);
     this.status?.setText(`Second Brain: ${plural(counts.error, "error")} · ${plural(counts.warning, "warning")}`);
-    if (hasSchema) await this.writeBriefing(vault, schema, issues, today);
+    if (hasSchema && Platform.isDesktopApp) await this.writeBriefing(vault, schema, issues, today);
   }
 
   /** The note named by file= or path=, or the active one. */
@@ -741,7 +765,7 @@ class SecondBrainSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     const settings = this.plugin.settings;
     containerEl.empty();
-    const text = (name: string, description: string, key: Exclude<keyof Settings, "ignoredFolders" | "completeNewNotes" | "healthSources" | "healthMaxHr" | "healthSex" | "healthZones" | "healthEvery">) =>
+    const text = (name: string, description: string, key: Exclude<keyof Settings, "ignoredFolders" | "completeNewNotes" | "externalChecks" | "healthSources" | "healthMaxHr" | "healthSex" | "healthZones" | "healthEvery">) =>
       new Setting(containerEl)
         .setName(name)
         .setDesc(description)
@@ -779,9 +803,21 @@ class SecondBrainSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         })
       );
-    text("Briefing file", "A page of starting context for agents, rewritten after every change. Leave empty for none.", "briefingFile");
+    text("Briefing file", "A page of starting context for agents, rewritten after every change in Obsidian for desktop. Leave empty for none.", "briefingFile");
     text("Log file", "Where the conform command records the notes it changed; its latest entries go in the briefing.", "logFile");
     text("Recall tests file", "Questions with a known answer, solved through the links.", "recallFile");
+    new Setting(containerEl)
+      .setName("External checks")
+      .setDesc("Obsidian for desktop. Commands run from the vault's folder with every check, one per line; each prints its problems as JSON, which join the others (see the README). Only commands you trust.")
+      .addTextArea((input) =>
+        input
+          .setPlaceholder("tools/my-check")
+          .setValue(settings.externalChecks.join("\n"))
+          .onChange(async (value) => {
+            settings.externalChecks = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+            await this.plugin.saveSettings();
+          })
+      );
     text(
       "Calendar helper socket",
       "Unix socket of the local calendar helper, for the calendar commands (Obsidian for Mac). Empty: no calendar commands.",

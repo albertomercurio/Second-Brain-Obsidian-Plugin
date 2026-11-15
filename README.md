@@ -7,7 +7,8 @@ Checks an Obsidian vault against a schema of note types and reads its links as t
 - **Templates**: note templates and Obsidian property types are generated from the schema; a new note gets its template as soon as it has a type, wherever it is; `conform` gives a note the properties of its template, in order.
 - **Renames**: after a rename in Obsidian, Bases views, the schema and the settings follow.
 - **Cleanup**: `prune` removes closed notes nobody has modified for a while, such as old tasks done; where they are cited, the links become text.
-- **Briefing**: a one-page starting context for AI agents, kept current.
+- **Briefing** (Obsidian for desktop): a one-page starting context for AI agents, kept current.
+- **External checks** (Obsidian for desktop): commands that print problems as JSON join the lint, for what Obsidian cannot see, such as the versions of a file that a sync service set aside.
 - **Calendar** (Obsidian for Mac): add the event a note describes to the calendar, or make a note from an event, through a local helper that holds the calendar permission.
 - **Health import** (Obsidian for desktop): reads the JSON exports of [Health Auto Export](https://www.healthyapps.dev) into JSON Lines files in the vault, ready for charts: days, workouts with their minutes and kilometre splits, running dynamics, heart-rate zones and training load.
 
@@ -21,9 +22,10 @@ Links come from Obsidian's own index, resolved as Obsidian resolves them.
 | Type property | `type` | The property that holds the type of a note |
 | Ignored folders | none | Left out of checks, links and counts, one per line |
 | Templates folder | `Second Brain/Templates` | Written by `templates`; always ignored |
-| Briefing file | `Second Brain/briefing.md` | Rewritten after every change; always ignored. Empty: no briefing |
+| Briefing file | `Second Brain/briefing.md` | Rewritten after every change, in Obsidian for desktop only: a phone writing it too would give a sync service two versions after every change. Always ignored. Empty: no briefing |
 | Log file | `Second Brain/log.md` | `conform` and `prune` add an entry `## [YYYY-MM-DD] conform \| …`; the latest five go in the briefing |
 | Recall tests file | `Second Brain/recall.yaml` | See below |
+| External checks | none | Commands, one per line, whose problems join the lint (see External checks) |
 | Complete new notes | on | A note created in Obsidian gets its template once it has a type (see New notes) |
 | Calendar helper socket | none | Unix socket of the calendar helper (see Calendar); `~` is the home folder. Empty: no calendar commands |
 | Health sources | none | One per line: a folder of Health Auto Export's exports, `->`, the vault folder for its data (see Health import) |
@@ -99,7 +101,7 @@ types:
 
 **Rules of a type**: `open` and `closed` are conditions, property → value or list of values; a note matches when any of the properties has one of the values. `agenda` puts a date in the briefing's next 30 days, with the label given (`true`: the property's name). `calendar` names the properties of the calendar commands (see Calendar). `stale_after` and `prune_after` count days from the last modification of the file, which never comes before a note was closed: the count can start late, never early. `name_date` names a date property whose day ends every note's name, in parentheses: `Meeting with Ada (2026-11-10)`; titles repeat, the day keeps names unique.
 
-**Codes**. Problems that follow a rule of the schema start with the type in lowercase with dashes: `person-duplicate`, `task-overdue`, `project-stale`, `event-name-date`. The others: `yaml-invalid`, `type-missing`, `type-unknown`, `folder-mismatch`, `field-required`, `field-recommended` (a property of `recommended` left empty), `field-unknown`, `field-kind`, `field-for-kind`, `datetime-midnight` (00:00, which Obsidian's date-and-time field writes when only the day is edited), `date-order`, `link-broken`, `link-unquoted`, `link-ambiguous`, `link-target-type`, `name-duplicate`, `alias-collision`, `isolated`, `no-backlinks`, `file-unlinked` (a file in an attachment folder that no note links or embeds), `injection-suspect`, `templater-command`, `filename-chars`, `file-large`, `file-too-large`, `base-link-broken`, `base-folder-broken`, `schema-missing`, `schema-invalid`, `property-type-conflict` (a property with kinds that Obsidian shows differently in two types: Obsidian keeps one type per name, so `.obsidian/types.json` would be wrong for one of them).
+**Codes**. Problems that follow a rule of the schema start with the type in lowercase with dashes: `person-duplicate`, `task-overdue`, `project-stale`, `event-name-date`. The others: `yaml-invalid`, `type-missing`, `type-unknown`, `folder-mismatch`, `field-required`, `field-recommended` (a property of `recommended` left empty), `field-unknown`, `field-kind`, `field-for-kind`, `datetime-midnight` (00:00, which Obsidian's date-and-time field writes when only the day is edited), `date-order`, `link-broken`, `link-unquoted`, `link-ambiguous`, `link-target-type`, `name-duplicate`, `alias-collision`, `isolated`, `no-backlinks`, `file-unlinked` (a file in an attachment folder that no note links or embeds), `injection-suspect`, `templater-command`, `filename-chars`, `file-large`, `file-too-large`, `base-link-broken`, `base-folder-broken`, `schema-missing`, `schema-invalid`, `property-type-conflict` (a property with kinds that Obsidian shows differently in two types: Obsidian keeps one type per name, so `.obsidian/types.json` would be wrong for one of them), `external-check-failed` (see External checks); external checks bring codes of their own.
 
 ## New notes
 
@@ -160,6 +162,25 @@ obsidian-cli second-brain:health-import [apply] [rebuild]
 ### Cleanup
 
 `prune` lists the closed notes of the types with `prune_after` that nobody has modified for that many days, and with `apply` removes them, to the trash that Obsidian's settings name (*Files and links → Deleted files*), then adds an entry to the log. Where a removed note is cited, a link in the body becomes its text followed by ✓ (`- [[Send the code]]` → `- Send the code ✓`), and a link in a property is taken out of it. A note with text of its own (a line that is not blank, a heading or a line of its type's `body`) is listed apart, to decide: move what matters to another note, then remove it with `file="Note" apply`, which removes a closed note now, whatever its age and text. The preview also names the attachments that would be left without links. The briefing counts the notes to prune.
+
+## External checks
+
+Obsidian for desktop. A command in the settings runs from the vault's folder with every check and prints its problems as a JSON array, paths relative to the vault; `line` and `hint` are optional, and printing nothing means no problems:
+
+```json
+[
+  {
+    "severity": "error",
+    "code": "icloud-conflict",
+    "path": "Notes/Ada Lovelace.md",
+    "line": 1,
+    "message": "iCloud set aside a version of this file changed elsewhere at the same time",
+    "hint": "compare the two, copy what is missing, then mark the version resolved"
+  }
+]
+```
+
+A command that fails, runs for more than a minute or prints something else gives the warning `external-check-failed`. Commands run with your permissions, like any program you start: list only those you trust.
 
 ## Calendar
 
@@ -224,4 +245,4 @@ npm run typecheck
 npm run build                 # dist/main.js; with VAULT_PLUGIN_DIR=<vault>/.obsidian/plugins/second-brain, also installed there
 ```
 
-`src/` holds the logic and knows nothing of Obsidian: it receives the vault as an index with links already resolved, which `main.ts` builds from Obsidian's metadata cache and the tests from fixtures. The calendar client gets Node's `net` from `main.ts`, which loads it only on the Mac, and the health import gets the files from `main.ts` too, which reads them with Node's `fs` only on desktop, so the plugin still loads on mobile. A vault is checked inside Obsidian: status bar, *Check the vault*, `obsidian-cli second-brain:lint`. MIT license.
+`src/` holds the logic and knows nothing of Obsidian: it receives the vault as an index with links already resolved, which `main.ts` builds from Obsidian's metadata cache and the tests from fixtures. The calendar client gets Node's `net` from `main.ts`, which loads it only on the Mac, and the health import gets the files from `main.ts` too, which reads them with Node's `fs` only on desktop, as it runs the external checks with Node's `child_process`, so the plugin still loads on mobile. A vault is checked inside Obsidian: status bar, *Check the vault*, `obsidian-cli second-brain:lint`. MIT license.

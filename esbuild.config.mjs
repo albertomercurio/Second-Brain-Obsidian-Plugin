@@ -6,8 +6,8 @@ import { copyFileSync, mkdirSync } from "fs";
 await esbuild.build({
   entryPoints: ["main.ts"],
   bundle: true,
-  // Node's modules: present in Obsidian for desktop, loaded only by the calendar commands and the health import.
-  external: ["obsidian", "net", "os", "fs", "path"],
+  // Node's modules: present in Obsidian for desktop, loaded only by the calendar commands, the health import and the external checks.
+  external: ["obsidian", "net", "os", "fs", "path", "child_process"],
   format: "cjs",
   target: "es2020",
   logLevel: "info",

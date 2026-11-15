@@ -66,6 +66,11 @@ export function lint(vault: Vault, schema: Schema, today: string): Issue[] {
   checkAttachments(vault, schema, add);
   checkBaseReferences(vault, schema, add);
 
+  return sortIssues(issues);
+}
+
+/** Errors first, then by path, line and code: the order of every report. */
+export function sortIssues(issues: Issue[]): Issue[] {
   return issues.sort(
     (a, b) =>
       SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity) ||

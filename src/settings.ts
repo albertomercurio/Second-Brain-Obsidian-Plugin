@@ -18,6 +18,8 @@ export interface Settings {
   logFile: string;
   /** Questions with a known answer, solved through the links. */
   recallFile: string;
+  /** Commands run from the vault's folder whose JSON problems join the checks (desktop), one each. */
+  externalChecks: string[];
   /** Unix socket of the local calendar helper (desktop); empty: calendar commands off. */
   calendarSocket: string;
   /** The calendar account chosen last, offered first next time. */
@@ -50,6 +52,7 @@ export const DEFAULT_SETTINGS: Settings = {
   briefingFile: "Second Brain/briefing.md",
   logFile: "Second Brain/log.md",
   recallFile: "Second Brain/recall.yaml",
+  externalChecks: [],
   calendarSocket: "",
   calendarAccount: "",
   completeNewNotes: true,
@@ -70,8 +73,8 @@ export function readSettings(saved: unknown): Settings {
       if (Array.isArray(value)) settings.ignoredFolders = folderList(value.filter((item) => typeof item === "string").join("\n"));
     } else if (key === "completeNewNotes") {
       if (typeof value === "boolean") settings.completeNewNotes = value;
-    } else if (key === "healthSources") {
-      if (Array.isArray(value)) settings.healthSources = value.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim());
+    } else if (key === "healthSources" || key === "externalChecks") {
+      if (Array.isArray(value)) settings[key] = value.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim());
     } else if (key === "healthMaxHr" || key === "healthEvery") {
       if (typeof value === "number" && Number.isFinite(value) && value >= 0) settings[key] = value;
     } else if (key === "healthSex") {
